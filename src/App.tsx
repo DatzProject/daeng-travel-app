@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Save,
@@ -254,11 +254,19 @@ const TravelFormApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 text-center mb-2">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center">
+          {/* Logo Section */}
+          <div className="mb-4">
+            <img
+              src="/logo_daeng_travel.png" // Sesuaikan nama file jika Anda menggunakan nama lain
+              alt="Logo Aplikasi"
+              className="mx-auto h-20 object-contain"
+            />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">
             Aplikasi Data Perjalanan
           </h1>
-          <p className="text-gray-600 text-center">
+          <p className="text-gray-600">
             Kelola data perjalanan dan paket tour dengan mudah
           </p>
           <div className="mt-4 flex justify-center space-x-4">
@@ -386,10 +394,10 @@ const TravelFormApp = () => {
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Pilih Jenis Trip</option>
-                  <option value="Domestik">Domestik</option>
-                  <option value="Internasional">Internasional</option>
-                  <option value="Umroh">Umroh</option>
-                  <option value="Haji">Haji</option>
+                  <option value="Konsorsium">Konsorsium</option>
+                  <option value="Open Trip">Open Trip</option>
+                  <option value="Family Trip">Family Trip</option>
+                  <option value="Group Trip">Group Trip</option>
                 </select>
               </div>
               <div>
@@ -961,17 +969,34 @@ const CustomerDataPage = () => {
     return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   };
 
+  const editFormRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editData && editFormRef.current) {
+      editFormRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }, [editData]); //
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-800 text-center mb-2">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center">
+          {/* Logo Section */}
+          <div className="mb-4">
+            <img
+              src="/logo_daeng_travel.png" // Sesuaikan nama file jika Anda menggunakan nama lain
+              alt="Logo Aplikasi"
+              className="mx-auto h-20 object-contain"
+            />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">
             Data Customer
           </h1>
-          <p className="text-gray-600 text-center">
-            Daftar data dari sheet FormCostumer
-          </p>
+          <p className="text-gray-600">Daftar data dari sheet FormCostumer</p>
           <div className="mt-4 flex justify-center space-x-4">
             <Link to="/" className="text-blue-600 hover:underline">
               Form Perjalanan
@@ -997,7 +1022,10 @@ const CustomerDataPage = () => {
 
         {/* Edit Form if editing */}
         {editData && (
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <div
+            ref={editFormRef}
+            className="bg-white rounded-lg shadow-lg p-6 mb-6"
+          >
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
               <Edit className="mr-2" size={24} />
               Edit Data
@@ -1098,10 +1126,10 @@ const CustomerDataPage = () => {
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="">Pilih Jenis Trip</option>
-                  <option value="Domestik">Domestik</option>
-                  <option value="Internasional">Internasional</option>
-                  <option value="Umroh">Umroh</option>
-                  <option value="Haji">Haji</option>
+                  <option value="Konsorsium">Konsorsium</option>
+                  <option value="Open Trip">Open Trip</option>
+                  <option value="Family Trip">Family Trip</option>
+                  <option value="Group Trip">Group Trip</option>
                 </select>
               </div>
               <div>
