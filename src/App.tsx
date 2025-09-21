@@ -35,10 +35,11 @@ interface TravelData extends FormData {
   id: string; // Ubah ke string karena nomor_passport adalah string
   timestamp: string;
   foto_passport?: string; // Optional
+  old_nomor_passport?: string;
 }
 
 const ENDPOINT =
-  "https://script.google.com/macros/s/AKfycbzy6sniNnfgQ5i_iCm0m24DF8kD6d-Kjos0d9c4_aHpV_F_WIIiXgXuEbw4GyXpyVfbvQ/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
+  "https://script.google.com/macros/s/AKfycbz4leW97--bjxEzdkVimn7slDYknTa0WTfxdZgwwoJ6thxPDn-YysXq5KnWI5i3H1KEhA/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
 
 const TravelFormApp = () => {
   const [formData, setFormData] = useState<FormData>({
@@ -632,6 +633,7 @@ const CustomerDataPage = () => {
   const [newFotoPassportBase64, setNewFotoPassportBase64] = useState<
     string | null
   >(null);
+  const [isEditFormOpened, setIsEditFormOpened] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -846,8 +848,10 @@ const CustomerDataPage = () => {
       masa_berlaku_passport: dateToComparable(item.masa_berlaku_passport),
       tanggal_keberangkatan: dateToComparable(item.tanggal_keberangkatan),
       harga_paket: String(item.harga_paket),
+      old_nomor_passport: item.nomor_passport,
     });
     setNewFotoPassportBase64(null);
+    setIsEditFormOpened(true);
   };
 
   const handleEditInputChange = (
@@ -912,6 +916,8 @@ const CustomerDataPage = () => {
       const dataToSend = {
         ...editData,
         action: "update",
+        old_nomor_passport:
+          editData.old_nomor_passport || editData.nomor_passport,
         foto_passport: newFotoPassportBase64
           ? newFotoPassportBase64.split(",")[1]
           : null, // Kirim null jika tidak ada perubahan foto
@@ -936,6 +942,7 @@ const CustomerDataPage = () => {
           item.id === editData.id
             ? {
                 ...editData,
+                id: editData.nomor_passport,
                 foto_passport: updatedData.foto_passport || item.foto_passport,
                 timestamp: new Date().toLocaleString("id-ID"),
               }
@@ -972,13 +979,14 @@ const CustomerDataPage = () => {
   const editFormRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (editData && editFormRef.current) {
+    if (isEditFormOpened && editFormRef.current) {
       editFormRef.current.scrollIntoView({
         behavior: "smooth",
         block: "start",
       });
+      setIsEditFormOpened(false);
     }
-  }, [editData]); //
+  }, [isEditFormOpened]); //
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -1098,7 +1106,6 @@ const CustomerDataPage = () => {
                   onChange={handleEditInputChange}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Masukkan nomor passport"
-                  disabled // Nomor passport tidak bisa diubah
                 />
               </div>
               <div>
