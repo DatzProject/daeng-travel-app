@@ -893,9 +893,15 @@ const CustomerDataPage = () => {
     if (!editData) return false;
     return (
       editData.nama &&
+      editData.tanggal_daftar &&
       editData.tanggal_lahir &&
       editData.jenis_kelamin &&
-      editData.nomor_passport
+      editData.nomor_passport &&
+      editData.masa_berlaku_passport &&
+      editData.jenis_trip &&
+      editData.paket_tour &&
+      editData.durasi_tour &&
+      editData.harga_paket
     );
   };
 
