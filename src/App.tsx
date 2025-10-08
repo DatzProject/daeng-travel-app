@@ -317,9 +317,9 @@ const TransaksiPage = () => {
       }));
       setDataList(formattedData);
 
-      // Hitung total omzet
       const total = formattedData.reduce(
-        (sum, item) => sum + Number(item.total_pembayaran || 0),
+        (sum: number, item: TransaksiData) =>
+          sum + Number(item.total_pembayaran || 0),
         0
       );
       setTotalOmzet(total);
@@ -367,6 +367,7 @@ const TransaksiPage = () => {
         nama: "",
         paket_tour: "",
         harga_paket: "",
+        tanggal_daftar: "",
         tanggal_keberangkatan: "",
         durasi_tour: "",
         dp1: "",
