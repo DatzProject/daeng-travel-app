@@ -84,8 +84,8 @@ const TransaksiPage = () => {
     bagasi: "",
     jumlah_peserta: "1",
     diskon: "0",
-    sisa_pembayaran: "",
-    total_pembayaran: "",
+    sisa_pembayaran: "0",
+    total_pembayaran: "0",
     status_pembayaran: "Belum Lunas",
   });
 
@@ -379,8 +379,8 @@ const TransaksiPage = () => {
         bagasi: "",
         jumlah_peserta: "1",
         diskon: "0",
-        sisa_pembayaran: "",
-        total_pembayaran: "",
+        sisa_pembayaran: "0",
+        total_pembayaran: "0",
         status_pembayaran: "Belum Lunas",
       });
       setBuktiDp1Base64(null);
