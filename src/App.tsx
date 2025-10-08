@@ -787,24 +787,38 @@ const TransaksiPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       {isLoading && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 9999 }}
-        >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-xl font-semibold text-gray-800">
-              Mohon Tunggu...
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              Sedang memuat data transaksi
-            </p>
+        <>
+          {/* Overlay untuk form area saja */}
+          <div
+            className="fixed bg-black bg-opacity-30 pointer-events-auto"
+            style={{
+              top: "200px", // Mulai dari bawah menu
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 30,
+            }}
+          />
+          {/* Loading indicator */}
+          <div
+            className="fixed inset-0 flex items-center justify-center pointer-events-none"
+            style={{ zIndex: 40 }}
+          >
+            <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-64">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-xl font-semibold text-gray-800">
+                Mohon Tunggu...
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Sedang memuat data transaksi
+              </p>
+            </div>
           </div>
-        </div>
+        </>
       )}
       <div className="max-w-6xl mx-auto">
         <div
-          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center sticky top-0"
           style={{ zIndex: 50 }}
         >
           <div className="mb-4">
@@ -2028,24 +2042,38 @@ const TravelFormApp = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       {isLoading && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 9999 }}
-        >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-xl font-semibold text-gray-800">
-              Mohon Tunggu...
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              Sedang memuat data perjalanan
-            </p>
+        <>
+          {/* Overlay untuk form area saja */}
+          <div
+            className="fixed bg-black bg-opacity-30 pointer-events-auto"
+            style={{
+              top: "200px", // Mulai dari bawah menu
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 30,
+            }}
+          />
+          {/* Loading indicator */}
+          <div
+            className="fixed inset-0 flex items-center justify-center pointer-events-none"
+            style={{ zIndex: 40 }}
+          >
+            <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-64">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-xl font-semibold text-gray-800">
+                Mohon Tunggu...
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Sedang memuat data perjalanan
+              </p>
+            </div>
           </div>
-        </div>
+        </>
       )}
       <div className="max-w-6xl mx-auto">
         <div
-          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center sticky top-0"
           style={{ zIndex: 50 }}
         >
           <div className="mb-4">
@@ -3052,24 +3080,38 @@ const CustomerDataPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       {isLoading && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 9999 }}
-        >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-xl font-semibold text-gray-800">
-              Mohon Tunggu...
-            </p>
-            <p className="text-sm text-gray-600 mt-2">
-              Sedang memuat data customer
-            </p>
+        <>
+          {/* Overlay untuk form area saja */}
+          <div
+            className="fixed bg-black bg-opacity-30 pointer-events-auto"
+            style={{
+              top: "200px", // Mulai dari bawah menu
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 30,
+            }}
+          />
+          {/* Loading indicator */}
+          <div
+            className="fixed inset-0 flex items-center justify-center pointer-events-none"
+            style={{ zIndex: 40 }}
+          >
+            <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-64">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-xl font-semibold text-gray-800">
+                Mohon Tunggu...
+              </p>
+              <p className="text-sm text-gray-600 mt-2">
+                Sedang memuat data customer
+              </p>
+            </div>
           </div>
-        </div>
+        </>
       )}
       <div className="max-w-6xl mx-auto">
         <div
-          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center sticky top-0"
           style={{ zIndex: 50 }}
         >
           <div className="mb-4">
