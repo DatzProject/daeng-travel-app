@@ -789,9 +789,9 @@ const TransaksiPage = () => {
       {isLoading && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 40 }}
+          style={{ zIndex: 9999 }}
         >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
             <p className="text-xl font-semibold text-gray-800">
               Mohon Tunggu...
@@ -2030,9 +2030,9 @@ const TravelFormApp = () => {
       {isLoading && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 40 }}
+          style={{ zIndex: 9999 }}
         >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
             <p className="text-xl font-semibold text-gray-800">
               Mohon Tunggu...
@@ -3054,9 +3054,9 @@ const CustomerDataPage = () => {
       {isLoading && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-          style={{ zIndex: 40 }}
+          style={{ zIndex: 9999 }}
         >
-          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center mt-32">
             <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
             <p className="text-xl font-semibold text-gray-800">
               Mohon Tunggu...
