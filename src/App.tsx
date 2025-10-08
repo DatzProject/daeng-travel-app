@@ -19,6 +19,7 @@ import autoTable from "jspdf-autotable";
 
 type FormData = {
   nama: string;
+  nomor_invoice: string; // ← BARU
   tanggal_daftar: string;
   tanggal_lahir: string;
   jenis_kelamin: string;
@@ -28,7 +29,30 @@ type FormData = {
   paket_tour: string;
   durasi_tour: string;
   harga_paket: string;
+  bagasi: string;
   tanggal_keberangkatan: string;
+};
+
+type TransaksiData = {
+  id: string;
+  nomor_invoice: string;
+  nama: string;
+  paket_tour: string;
+  harga_paket: string;
+  tanggal_keberangkatan: string;
+  durasi_tour: string;
+  dp1: string;
+  bukti_dp1?: string;
+  tanggal_dp1: string;
+  dp2: string;
+  bukti_dp2?: string;
+  tanggal_dp2: string;
+  bagasi: string;
+  jumlah_peserta: string;
+  diskon: string;
+  sisa_pembayaran: string;
+  total_pembayaran: string;
+  status_pembayaran: string;
 };
 
 interface TravelData extends FormData {
@@ -39,11 +63,1637 @@ interface TravelData extends FormData {
 }
 
 const ENDPOINT =
-  "https://script.google.com/macros/s/AKfycbz4leW97--bjxEzdkVimn7slDYknTa0WTfxdZgwwoJ6thxPDn-YysXq5KnWI5i3H1KEhA/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
+  "https://script.google.com/macros/s/AKfycbxNFteH45eVs9e8yzGICBvIou_-gcVLjF7jZ8WyAijyMQu0V5gPJrLG7C_SJVGCQ7Vw/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
+
+const TransaksiPage = () => {
+  const [formData, setFormData] = useState<Omit<TransaksiData, "id">>({
+    nomor_invoice: "",
+    nama: "",
+    paket_tour: "",
+    harga_paket: "",
+    tanggal_keberangkatan: "",
+    durasi_tour: "",
+    dp1: "",
+    bukti_dp1: "",
+    tanggal_dp1: "",
+    dp2: "",
+    bukti_dp2: "",
+    tanggal_dp2: "",
+    bagasi: "",
+    jumlah_peserta: "1",
+    diskon: "0",
+    sisa_pembayaran: "",
+    total_pembayaran: "",
+    status_pembayaran: "Belum Lunas",
+  });
+
+  const [buktiDp1Base64, setBuktiDp1Base64] = useState<string | null>(null);
+  const [buktiDp2Base64, setBuktiDp2Base64] = useState<string | null>(null);
+  const [dataList, setDataList] = useState<TransaksiData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [editData, setEditData] = useState<TransaksiData | null>(null);
+  const [editBuktiDp1, setEditBuktiDp1] = useState<string | null>(null);
+  const [editBuktiDp2, setEditBuktiDp2] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLDivElement>(null);
+  const [isEditFormOpened, setIsEditFormOpened] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const parseDate = (dateString: string): Date | null => {
+    if (!dateString) return null;
+    try {
+      let date: Date | null = null;
+      if (dateString.includes("T")) {
+        date = new Date(dateString);
+      } else {
+        const parts = dateString.replace(/\//g, "-").split("-");
+        if (parts.length === 3) {
+          let day = parseInt(parts[0], 10);
+          let month = parseInt(parts[1], 10);
+          let year = parseInt(parts[2], 10);
+          if (year < 100) year += 2000;
+          if (parts[0].length === 4) {
+            day = parseInt(parts[2], 10);
+            month = parseInt(parts[1], 10);
+            year = parseInt(parts[0], 10);
+          }
+          date = new Date(year, month - 1, day);
+        } else {
+          date = new Date(dateString);
+        }
+      }
+      if (date && !isNaN(date.getTime())) {
+        return date;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "";
+    const date = parseDate(dateString);
+    if (!date) {
+      return dateString; // Kembalikan string asli jika tidak bisa diparse
+    }
+    const day = date.getDate().toString().padStart(2, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
+  const dateToComparable = (dateString: string): string => {
+    if (!dateString) return "";
+    const date = parseDate(dateString);
+    if (!date) return "";
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper: Convert DD-MM-YYYY to YYYY-MM-DD for <input type="date" />
+  const parseDDMMYYYYToISO = (dateStr: string): string => {
+    if (!dateStr) return "";
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return "";
+    const [day, month, year] = parts.map((part) => part.padStart(2, "0"));
+    const isoDate = `${year}-${month}-${day}`;
+    // Validate date
+    const d = new Date(isoDate);
+    return d.toISOString().split("T")[0] === isoDate ? isoDate : "";
+  }; // Fungsi untuk generate nomor invoice otomatis
+  const generateInvoiceNumber = () => {
+    const today = new Date();
+    const day = today.getDate().toString().padStart(2, "0");
+    const month = (today.getMonth() + 1).toString().padStart(2, "0");
+    const year = today.getFullYear();
+    const prefix = `${day}${month}${year}`;
+
+    // Filter invoice dengan prefix hari ini
+    const todayInvoices = dataList
+      .filter((item) => {
+        const invoiceStr = String(item.nomor_invoice || "");
+        return invoiceStr.startsWith(prefix);
+      })
+      .map((item) => String(item.nomor_invoice));
+
+    // Cari nomor urut tertinggi
+    let nextNumber = 1;
+    if (todayInvoices.length > 0) {
+      const numbers = todayInvoices.map((invoice) => {
+        const lastThree = invoice.slice(-3); // Ambil 3 digit terakhir
+        return parseInt(lastThree) || 0;
+      });
+
+      const maxNumber = Math.max(...numbers);
+      nextNumber = maxNumber + 1;
+    }
+
+    const invoiceNumber = `${prefix}${nextNumber.toString().padStart(3, "0")}`;
+    return invoiceNumber;
+  };
+
+  // Format angka input
+  const formatInputNumber = (value: string) => {
+    if (!value) return "";
+    return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    if (
+      [
+        "harga_paket",
+        "dp1",
+        "dp2",
+        "bagasi",
+        "diskon",
+        "jumlah_peserta",
+      ].includes(name)
+    ) {
+      // <-- Removed "durasi_tour"
+      const rawValue = value.replace(/\./g, "").replace(/\D/g, "");
+      setFormData((prev) => ({ ...prev, [name]: rawValue }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handleFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "dp1" | "dp2"
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (type === "dp1") setBuktiDp1Base64(reader.result as string);
+        else setBuktiDp2Base64(reader.result as string);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const handleEditFileChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    type: "dp1" | "dp2"
+  ) => {
+    if (e.target.files && e.target.files[0]) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (type === "dp1") setEditBuktiDp1(reader.result as string);
+        else setEditBuktiDp2(reader.result as string);
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    }
+  };
+
+  const calculatePayments = () => {
+    const harga = Number(formData.harga_paket) || 0;
+    const bagasi = Number(formData.bagasi) || 0;
+    const pax = Number(formData.jumlah_peserta) || 1;
+    const diskon = Number(formData.diskon) || 0;
+
+    const total = (harga + bagasi) * pax - diskon;
+    const dp1 = Number(formData.dp1) || 0;
+    const dp2 = Number(formData.dp2) || 0;
+    const sisa = total - dp1 - dp2;
+
+    setFormData((prev) => ({
+      ...prev,
+      total_pembayaran: String(total),
+      sisa_pembayaran: String(sisa),
+    }));
+  };
+
+  useEffect(() => {
+    calculatePayments();
+  }, [
+    formData.harga_paket,
+    formData.bagasi,
+    formData.jumlah_peserta,
+    formData.diskon,
+    formData.dp1,
+    formData.dp2,
+  ]);
+
+  // Auto-generate invoice number ketika nama diisi
+  useEffect(() => {
+    if (formData.nama && !formData.nomor_invoice) {
+      const newInvoice = generateInvoiceNumber();
+      setFormData((prev) => ({
+        ...prev,
+        nomor_invoice: newInvoice,
+      }));
+    }
+  }, [formData.nama, dataList.length]); // Depend on dataList.length untuk update setelah data baru
+
+  // Reset invoice ketika nama dikosongkan
+  useEffect(() => {
+    if (!formData.nama && formData.nomor_invoice) {
+      setFormData((prev) => ({
+        ...prev,
+        nomor_invoice: "",
+      }));
+    }
+  }, [formData.nama]);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${ENDPOINT}?action=read&sheet=Transaksi`, {
+        mode: "cors",
+      });
+      const data = await res.json();
+      setDataList(
+        data.map((item: any) => ({
+          ...item,
+          id: item.nomor_invoice,
+        }))
+      );
+    } catch (err) {
+      setMessage("Gagal memuat data transaksi");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!formData.nomor_invoice || !formData.nama || !formData.paket_tour) {
+      setMessage("Harap isi field wajib");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const payload = {
+        ...formData,
+        bukti_dp1: buktiDp1Base64 ? buktiDp1Base64.split(",")[1] : null,
+        bukti_dp2: buktiDp2Base64 ? buktiDp2Base64.split(",")[1] : null,
+        sheet: "Transaksi",
+      };
+
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload),
+        mode: "cors",
+      });
+
+      if (!res.ok) throw new Error("Gagal menyimpan");
+      await fetchData();
+
+      // Reset form
+      setFormData({
+        nomor_invoice: "",
+        nama: "",
+        paket_tour: "",
+        harga_paket: "",
+        tanggal_keberangkatan: "",
+        durasi_tour: "",
+        dp1: "",
+        bukti_dp1: "",
+        tanggal_dp1: "",
+        dp2: "",
+        bukti_dp2: "",
+        tanggal_dp2: "",
+        bagasi: "",
+        jumlah_peserta: "1",
+        diskon: "0",
+        sisa_pembayaran: "",
+        total_pembayaran: "",
+        status_pembayaran: "Belum Lunas",
+      });
+      setBuktiDp1Base64(null);
+      setBuktiDp2Base64(null);
+      setMessage("Transaksi berhasil disimpan!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err: any) {
+      setMessage(err.message || "Terjadi kesalahan");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Hapus transaksi ini?")) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(
+        `${ENDPOINT}?action=delete&passport=${encodeURIComponent(
+          id
+        )}&sheet=Transaksi`,
+        { method: "GET", mode: "cors" }
+      );
+      if (!res.ok) throw new Error("Gagal menghapus");
+      setDataList((prev) => prev.filter((item) => item.id !== id));
+      setMessage("Transaksi dihapus!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err: any) {
+      setMessage(err.message || "Gagal menghapus");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEdit = (item: TransaksiData) => {
+    setEditData({
+      ...item,
+      tanggal_dp1: dateToComparable(item.tanggal_dp1),
+      tanggal_dp2: dateToComparable(item.tanggal_dp2),
+      tanggal_keberangkatan: dateToComparable(item.tanggal_keberangkatan),
+    });
+    setEditBuktiDp1(null);
+    setEditBuktiDp2(null);
+    setIsEditFormOpened(true);
+  };
+
+  const calculateEditPayments = () => {
+    if (!editData) return;
+    const harga = Number(editData.harga_paket) || 0;
+    const bagasi = Number(editData.bagasi) || 0;
+    const pax = Number(editData.jumlah_peserta) || 1;
+    const diskon = Number(editData.diskon) || 0;
+
+    const total = (harga + bagasi) * pax - diskon;
+    const dp1 = Number(editData.dp1) || 0;
+    const dp2 = Number(editData.dp2) || 0;
+    const sisa = total - dp1 - dp2;
+
+    setEditData((prev) => ({
+      ...prev!,
+      total_pembayaran: String(total),
+      sisa_pembayaran: String(sisa),
+    }));
+  };
+
+  useEffect(() => {
+    calculateEditPayments();
+  }, [
+    editData?.harga_paket,
+    editData?.bagasi,
+    editData?.jumlah_peserta,
+    editData?.diskon,
+    editData?.dp1,
+    editData?.dp2,
+  ]);
+
+  const handleEditInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    if (editData) {
+      if (
+        [
+          "harga_paket",
+          "dp1",
+          "dp2",
+          "bagasi",
+          "diskon",
+          "jumlah_peserta",
+        ].includes(name)
+      ) {
+        // <-- Removed "durasi_tour"
+        const rawValue = value.replace(/\./g, "").replace(/\D/g, "");
+        setEditData({ ...editData, [name]: rawValue });
+      } else {
+        setEditData({ ...editData, [name]: value });
+      }
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!editData) return;
+    setIsLoading(true);
+    try {
+      const payload = {
+        ...editData,
+        action: "update",
+        old_nomor_passport: editData.nomor_invoice,
+        bukti_dp1: editBuktiDp1 ? editBuktiDp1.split(",")[1] : null,
+        bukti_dp2: editBuktiDp2 ? editBuktiDp2.split(",")[1] : null,
+        sheet: "Transaksi",
+      };
+
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload),
+        mode: "cors",
+      });
+
+      if (!res.ok) throw new Error("Gagal memperbarui");
+      await fetchData();
+      setEditData(null);
+      setMessage("Transaksi diperbarui!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err: any) {
+      setMessage(err.message || "Gagal memperbarui");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: string) =>
+    value
+      ? new Intl.NumberFormat("id-ID", {
+          style: "currency",
+          currency: "IDR",
+        }).format(Number(value))
+      : "";
+
+  useEffect(() => {
+    if (isEditFormOpened && editFormRef.current) {
+      editFormRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      setIsEditFormOpened(false);
+    }
+  }, [isEditFormOpened]);
+
+  // Fungsi helper format number dengan titik
+  const formatNumber = (num: string) => {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  // Fungsi terbilang Rupiah
+  const bilangRupiah = (angka: number): string => {
+    const bilangan = [
+      "",
+      "Satu",
+      "Dua",
+      "Tiga",
+      "Empat",
+      "Lima",
+      "Enam",
+      "Tujuh",
+      "Delapan",
+      "Sembilan",
+      "Sepuluh",
+      "Sebelas",
+    ];
+    if (angka < 12) return bilangan[angka];
+    if (angka < 20) return bilangRupiah(angka - 10) + " Belas";
+    if (angka < 100)
+      return (
+        bilangRupiah(Math.floor(angka / 10)) +
+        " Puluh" +
+        (angka % 10 ? " " + bilangRupiah(angka % 10) : "")
+      );
+    if (angka < 200)
+      return "Seratus" + (angka % 100 ? " " + bilangRupiah(angka % 100) : "");
+    if (angka < 1000)
+      return (
+        bilangRupiah(Math.floor(angka / 100)) +
+        " Ratus" +
+        (angka % 100 ? " " + bilangRupiah(angka % 100) : "")
+      );
+    if (angka < 2000)
+      return "Seribu" + (angka % 1000 ? " " + bilangRupiah(angka % 1000) : "");
+    if (angka < 1000000)
+      return (
+        bilangRupiah(Math.floor(angka / 1000)) +
+        " Ribu" +
+        (angka % 1000 ? " " + bilangRupiah(angka % 1000) : "")
+      );
+    if (angka < 1000000000)
+      return (
+        bilangRupiah(Math.floor(angka / 1000000)) +
+        " Juta" +
+        (angka % 1000000 ? " " + bilangRupiah(angka % 1000000) : "")
+      );
+    return "";
+  };
+
+  // Fungsi untuk menghitung periode
+  const calculatePeriod = (
+    tanggalKeberangkatan: string,
+    durasiTour: string
+  ): string => {
+    const date = parseDate(tanggalKeberangkatan);
+    if (!date) return "Invalid Date";
+
+    const dayMatch = durasiTour.match(/^(\d+)D/);
+    const days = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+
+    const endDate = new Date(date);
+    endDate.setDate(date.getDate() + days - 1);
+
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    };
+    const startDateFormatted = date.toLocaleDateString("id-ID", options);
+    const endDateFormatted = endDate.toLocaleDateString("id-ID", options);
+
+    return `${startDateFormatted} - ${endDateFormatted}`;
+  };
+
+  const handleDownloadInvoice = (item: TransaksiData) => {
+    // Data dari transaksi yang dipilih
+    const pax = Number(item.jumlah_peserta) || 1;
+    const hargaPaket = Number(item.harga_paket) || 0;
+    const bagasi = Number(item.bagasi) || 0;
+    const diskon = Number(item.diskon) || 0;
+
+    const totalAmount = hargaPaket * pax;
+    const totalBagasi = bagasi * pax;
+    const grandTotal = totalAmount + totalBagasi - diskon;
+
+    const pricePerPax = hargaPaket.toString();
+    const bagasiPerPax = bagasi > 0 ? bagasi.toString() : "0";
+
+    const program =
+      item.paket_tour +
+      "  " +
+      item.durasi_tour.replace("D ", "H").replace("N", "M");
+
+    const tanggal = new Date().toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+    const invoiceNo = item.nomor_invoice;
+    const terbilang = bilangRupiah(grandTotal) + " Rupiah";
+
+    const doc = new jsPDF();
+
+    // Logo (pastikan file ada di public folder)
+    try {
+      doc.addImage("/logo_daeng_travel.png", "PNG", 10, 17, 40, 16);
+    } catch (e) {
+      console.log("Logo tidak ditemukan");
+    }
+
+    // Header Perusahaan
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("CV. DAENG WISATA INDONESIA TOUR & TRAVEL", 105, 20, {
+      align: "center",
+    });
+    doc.setFont("helvetica", "normal");
+    doc.text("Call/WA: 085256 268 727", 105, 25, { align: "center" });
+    doc.text("Email: daengwisataindonesia@gmail.com", 105, 30, {
+      align: "center",
+    });
+    doc.text("Head Office: Perumahan Green House Alauddin, Makassar", 105, 35, {
+      align: "center",
+    });
+
+    // Garis pemisah
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(10, 40, 200, 40);
+
+    // Booking Konfirmasi
+    doc.setFontSize(10);
+    doc.text("Booking Konfirmasi:", 15, 60);
+    doc.text(`Tanggal : ${tanggal}`, 15, 70);
+    doc.text(`Invoice No : ${invoiceNo}`, 105, 70);
+    doc.text(`Nama : ${item.nama}`, 15, 80);
+    doc.text(`Peserta : ${pax} Pax`, 105, 80);
+    doc.text(`Program : Tour ${program}`, 15, 90);
+
+    const periode = calculatePeriod(
+      item.tanggal_keberangkatan,
+      item.durasi_tour
+    );
+    doc.text(`Periode : ${periode}`, 15, 100);
+
+    // Detail Invoice Table
+    const invoiceBody = [
+      [
+        "1",
+        `Paket Tour ${program}`,
+        formatNumber(pricePerPax),
+        "1",
+        String(pax),
+        formatNumber(totalAmount.toString()),
+      ],
+    ];
+
+    // Tambahkan baris bagasi jika ada
+    if (totalBagasi > 0) {
+      invoiceBody.push([
+        "2",
+        "Biaya Bagasi",
+        formatNumber(bagasiPerPax),
+        "-",
+        String(pax),
+        formatNumber(totalBagasi.toString()),
+      ]);
+    }
+
+    // Tambahkan baris diskon jika ada
+    if (diskon > 0) {
+      invoiceBody.push([
+        totalBagasi > 0 ? "3" : "2",
+        "Diskon",
+        "-",
+        "-",
+        "-",
+        "-" + formatNumber(diskon.toString()),
+      ]);
+    }
+
+    autoTable(doc, {
+      startY: 110,
+      head: [["No", "Description", "Price", "Pkg", "Pax", "Total"]],
+      body: invoiceBody,
+      foot: [["", "", "", "", "Total", formatNumber(grandTotal.toString())]],
+      theme: "grid",
+      styles: { fontSize: 10 },
+    });
+
+    // Tabel "Says"
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY,
+      body: [[`Says: ${terbilang}`]],
+      theme: "grid",
+      styles: { fontSize: 10 },
+      columnStyles: { 0: { cellWidth: "auto" } },
+    });
+
+    // Tabel DP dan Sisa
+    const dp1Display = item.dp1 ? formatNumber(item.dp1) : "";
+    const dp2Display = item.dp2 ? formatNumber(item.dp2) : "";
+    const sisaDisplay = formatNumber(item.sisa_pembayaran);
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY,
+      body: [
+        ["DP1", dp1Display],
+        ["DP2", dp2Display],
+        ["Sisa", sisaDisplay],
+      ],
+      theme: "grid",
+      styles: { fontSize: 10 },
+      columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 50 } },
+    });
+
+    // NOTE
+    let yPos = (doc as any).lastAutoTable.finalY + 10;
+    doc.text(`NOTE: ${item.status_pembayaran.toUpperCase()}`, 15, yPos);
+    doc.text(
+      "Balance/Pelunasan paling lambat H-20 Keberangkatan",
+      15,
+      yPos + 10
+    );
+
+    // Bank Account
+    yPos += 20;
+    doc.text("BANK ACCOUNT", 15, yPos);
+    yPos += 10;
+    doc.text("BANK MANDIRI", 15, yPos);
+    doc.text("Account No : 1810 0020 03748", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BCA", 15, yPos);
+    doc.text("Account No : 7970 42 6064", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BRI", 15, yPos);
+    doc.text("AccountNo.: 382401017088539", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BNI", 15, yPos);
+    doc.text("Account No. : 0558 67 7534", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    doc.text("Account No. : 2410 61 2436", 15, yPos + 15);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 20);
+
+    // Best Regards
+    doc.text("Best Regards", 150, yPos + 30);
+    doc.text("Daeng Travel", 150, yPos + 50);
+
+    doc.save(`invoice_${item.nomor_invoice}.pdf`);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      {isLoading && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+          style={{ zIndex: 40 }}
+        >
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-xl font-semibold text-gray-800">
+              Mohon Tunggu...
+            </p>
+            <p className="text-sm text-gray-600 mt-2">
+              Sedang memuat data transaksi
+            </p>
+          </div>
+        </div>
+      )}
+      <div className="max-w-6xl mx-auto">
+        <div
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          style={{ zIndex: 50 }}
+        >
+          <div className="mb-4">
+            <img
+              src="/logo_daeng_travel.png"
+              alt="Logo Aplikasi"
+              className="mx-auto h-20 object-contain"
+            />
+          </div>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">Transaksi</h1>
+          <div className="mt-4 flex justify-center space-x-4">
+            <Link to="/" className="text-blue-600 hover:underline">
+              Form Perjalanan
+            </Link>
+            <Link to="/data-customer" className="text-blue-600 hover:underline">
+              Data Customer
+            </Link>
+            <Link to="/transaksi" className="text-blue-600 hover:underline">
+              Transaksi
+            </Link>
+          </div>
+        </div>
+
+        {message && (
+          <div
+            className={`mb-4 p-4 rounded-lg ${
+              message.includes("berhasil")
+                ? "bg-green-100 text-green-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
+            {message}
+          </div>
+        )}
+
+        {/* Form Input */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+            <Plus className="mr-2" size={24} />
+            Tambah Transaksi Baru
+          </h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <FileText size={16} className="mr-1" />
+                Nomor Invoice
+              </label>
+              <input
+                type="text"
+                name="nomor_invoice"
+                value={formData.nomor_invoice}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                placeholder="Masukkan nomor invoice"
+                readOnly // <-- Tidak bisa diedit, tapi tetap bisa dikirim
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <User size={16} className="mr-1" />
+                Nama
+              </label>
+              <input
+                type="text"
+                name="nama"
+                value={formData.nama}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Masukkan nama lengkap"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Package size={16} className="mr-1" />
+                Paket Tour
+              </label>
+              <select
+                name="paket_tour"
+                value={formData.paket_tour}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Pilih Paket Tour</option>
+                <option value="Malaysia - Singapore - Thailand">
+                  Malaysia - Singapore - Thailand
+                </option>
+                <option value="Malaysia - Singapore">
+                  Malaysia - Singapore
+                </option>
+              </select>
+            </div>
+            {/* Durasi Tour */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Clock size={16} className="mr-1" />
+                Durasi Tour
+              </label>
+              <select
+                name="durasi_tour"
+                value={formData.durasi_tour}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">Pilih Durasi Tour</option>
+                <option value="3D 2N">3D 2N</option>
+                <option value="4D 3N">4D 3N</option>
+                <option value="5D 4N">5D 4N</option>
+                <option value="6D 5N">6D 5N</option>
+                <option value="7D 6N">7D 6N</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <DollarSign size={16} className="mr-1" />
+                Harga Paket
+              </label>
+              <input
+                type="text"
+                name="harga_paket"
+                value={formatInputNumber(formData.harga_paket)}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Contoh: 5000000"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Calendar size={16} className="mr-1" />
+                Tanggal Keberangkatan
+              </label>
+              <input
+                type="date"
+                name="tanggal_keberangkatan"
+                value={formData.tanggal_keberangkatan}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <User size={16} className="mr-1" />
+                Jumlah Peserta
+              </label>
+              <input
+                type="number"
+                name="jumlah_peserta"
+                value={formData.jumlah_peserta}
+                onChange={handleInputChange}
+                min="1"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Package size={16} className="mr-1" />
+                Harga Bagasi (Opsional)
+              </label>
+              <input
+                type="text"
+                name="bagasi"
+                value={formatInputNumber(formData.bagasi)}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Contoh: 300000"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <DollarSign size={16} className="mr-1" />
+                Diskon (Opsional)
+              </label>
+              <input
+                type="text"
+                name="diskon"
+                value={formatInputNumber(formData.diskon)}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Contoh: 200000"
+              />
+            </div>
+
+            {/* Total Pembayaran (calculated, read-only) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <DollarSign size={16} className="mr-1" />
+                Total Pembayaran
+              </label>
+              <input
+                type="text"
+                name="total_pembayaran"
+                value={formatInputNumber(formData.total_pembayaran)}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                readOnly
+              />
+            </div>
+
+            {/* DP1 Section */}
+            <div className="border-t pt-4">
+              <h3 className="text-md font-medium text-gray-800 mb-3">
+                Pembayaran DP1
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Calendar size={16} className="mr-1" />
+                    Tanggal DP1
+                  </label>
+                  <input
+                    type="date"
+                    name="tanggal_dp1"
+                    value={formData.tanggal_dp1}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <DollarSign size={16} className="mr-1" />
+                    Jumlah DP1
+                  </label>
+                  <input
+                    type="text"
+                    name="dp1"
+                    value={formatInputNumber(formData.dp1)}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Contoh: 1000000"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Image size={16} className="mr-1" />
+                  Bukti Transfer DP1
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, "dp1")}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* DP2 Section */}
+            <div className="border-t pt-4">
+              <h3 className="text-md font-medium text-gray-800 mb-3">
+                Pembayaran DP2
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Calendar size={16} className="mr-1" />
+                    Tanggal DP2
+                  </label>
+                  <input
+                    type="date"
+                    name="tanggal_dp2"
+                    value={formData.tanggal_dp2}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <DollarSign size={16} className="mr-1" />
+                    Jumlah DP2
+                  </label>
+                  <input
+                    type="text"
+                    name="dp2"
+                    value={formatInputNumber(formData.dp2)}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Contoh: 1500000"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Image size={16} className="mr-1" />
+                  Bukti Transfer DP2
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, "dp2")}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Sisa Pembayaran (calculated, read-only) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <DollarSign size={16} className="mr-1" />
+                Sisa Pembayaran
+              </label>
+              <input
+                type="text"
+                name="sisa_pembayaran"
+                value={formatInputNumber(formData.sisa_pembayaran)}
+                className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                readOnly
+              />
+            </div>
+
+            {/* Status Pembayaran */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status Pembayaran
+              </label>
+              <select
+                name="status_pembayaran"
+                value={formData.status_pembayaran}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="Belum Lunas">Belum Lunas</option>
+                <option value="Lunas">Lunas</option>
+              </select>
+            </div>
+
+            <button
+              onClick={handleSubmit}
+              disabled={isLoading}
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+            >
+              <Save className="mr-2" size={20} />
+              {isLoading ? "Menyimpan..." : "Simpan Transaksi"}
+            </button>
+          </div>
+        </div>
+
+        {/* Edit Form */}
+        {editData && (
+          <div
+            ref={editFormRef}
+            className="bg-white rounded-lg shadow-lg p-6 mb-6"
+          >
+            <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <Edit className="mr-2" size={24} />
+              Edit Transaksi
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <FileText size={16} className="mr-1" />
+                  Nomor Invoice
+                </label>
+                <input
+                  type="text"
+                  name="nomor_invoice"
+                  value={editData.nomor_invoice}
+                  onChange={(e) =>
+                    setEditData({ ...editData, nomor_invoice: e.target.value })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Masukkan nomor invoice"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <User size={16} className="mr-1" />
+                  Nama
+                </label>
+                <input
+                  type="text"
+                  name="nama"
+                  value={editData.nama}
+                  onChange={(e) =>
+                    setEditData({ ...editData, nama: e.target.value })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Masukkan nama lengkap"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Package size={16} className="mr-1" />
+                  Paket Tour
+                </label>
+                <select
+                  name="paket_tour"
+                  value={editData.paket_tour}
+                  onChange={(e) =>
+                    setEditData({ ...editData, paket_tour: e.target.value })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Pilih Paket Tour</option>
+                  <option value="Malaysia - Singapore - Thailand">
+                    Malaysia - Singapore - Thailand
+                  </option>
+                  <option value="Malaysia - Singapore">
+                    Malaysia - Singapore
+                  </option>
+                </select>
+              </div>
+              {/* Durasi Tour */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Clock size={16} className="mr-1" />
+                  Durasi Tour
+                </label>
+                <select
+                  name="durasi_tour"
+                  value={editData.durasi_tour}
+                  onChange={handleEditInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Pilih Durasi Tour</option>
+                  <option value="3D 2N">3D 2N</option>
+                  <option value="4D 3N">4D 3N</option>
+                  <option value="5D 4N">5D 4N</option>
+                  <option value="6D 5N">6D 5N</option>
+                  <option value="7D 6N">7D 6N</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <DollarSign size={16} className="mr-1" />
+                  Harga Paket
+                </label>
+                <input
+                  type="text"
+                  name="harga_paket"
+                  value={formatInputNumber(editData.harga_paket)}
+                  onChange={handleEditInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Contoh: 5000000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Calendar size={16} className="mr-1" />
+                  Tanggal Keberangkatan
+                </label>
+                <input
+                  type="date"
+                  name="tanggal_keberangkatan"
+                  value={editData.tanggal_keberangkatan}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      tanggal_keberangkatan: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <User size={16} className="mr-1" />
+                  Jumlah Peserta
+                </label>
+                <input
+                  type="number"
+                  name="jumlah_peserta"
+                  value={editData.jumlah_peserta}
+                  onChange={handleEditInputChange}
+                  min="1"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Package size={16} className="mr-1" />
+                  Harga Bagasi (Opsional)
+                </label>
+                <input
+                  type="text"
+                  name="bagasi"
+                  value={formatInputNumber(editData.bagasi)}
+                  onChange={handleEditInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Contoh: 300000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <DollarSign size={16} className="mr-1" />
+                  Diskon (Opsional)
+                </label>
+                <input
+                  type="text"
+                  name="diskon"
+                  value={formatInputNumber(editData.diskon)}
+                  onChange={handleEditInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Contoh: 200000"
+                />
+              </div>
+
+              {/* Total Pembayaran (calculated, read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <DollarSign size={16} className="mr-1" />
+                  Total Pembayaran
+                </label>
+                <input
+                  type="text"
+                  name="total_pembayaran"
+                  value={formatInputNumber(editData.total_pembayaran)}
+                  className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                  readOnly
+                />
+              </div>
+
+              {/* DP1 Section */}
+              <div className="border-t pt-4">
+                <h3 className="text-md font-medium text-gray-800 mb-3">
+                  Pembayaran DP1
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <Calendar size={16} className="mr-1" />
+                      Tanggal DP1
+                    </label>
+                    <input
+                      type="date"
+                      name="tanggal_dp1"
+                      value={editData.tanggal_dp1} // <-- ini sudah YYYY-MM-DD berkat parseDDMMYYYYToISO
+                      onChange={(e) =>
+                        setEditData({
+                          ...editData,
+                          tanggal_dp1: e.target.value, // <-- ini tetap YYYY-MM-DD
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <DollarSign size={16} className="mr-1" />
+                      Jumlah DP1
+                    </label>
+                    <input
+                      type="text"
+                      name="dp1"
+                      value={formatInputNumber(editData.dp1)}
+                      onChange={handleEditInputChange}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Contoh: 1000000"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Image size={16} className="mr-1" />
+                    Bukti Transfer DP1 Baru (Opsional)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleEditFileChange(e, "dp1")}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {editData.bukti_dp1 && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Bukti saat ini:{" "}
+                      <a
+                        href={editData.bukti_dp1}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Lihat Bukti DP1
+                      </a>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* DP2 Section */}
+              <div className="border-t pt-4">
+                <h3 className="text-md font-medium text-gray-800 mb-3">
+                  Pembayaran DP2
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <Calendar size={16} className="mr-1" />
+                      Tanggal DP2
+                    </label>
+                    <input
+                      type="date"
+                      name="tanggal_dp2"
+                      value={editData.tanggal_dp2}
+                      onChange={(e) =>
+                        setEditData({
+                          ...editData,
+                          tanggal_dp2: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <DollarSign size={16} className="mr-1" />
+                      Jumlah DP2
+                    </label>
+                    <input
+                      type="text"
+                      name="dp2"
+                      value={formatInputNumber(editData.dp2)}
+                      onChange={handleEditInputChange}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Contoh: 1500000"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Image size={16} className="mr-1" />
+                    Bukti Transfer DP2 Baru (Opsional)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleEditFileChange(e, "dp2")}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {editData.bukti_dp2 && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Bukti saat ini:{" "}
+                      <a
+                        href={editData.bukti_dp2}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Lihat Bukti DP2
+                      </a>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Sisa Pembayaran (calculated, read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <DollarSign size={16} className="mr-1" />
+                  Sisa Pembayaran
+                </label>
+                <input
+                  type="text"
+                  name="sisa_pembayaran"
+                  value={formatInputNumber(editData.sisa_pembayaran)}
+                  className="w-full p-3 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed"
+                  readOnly
+                />
+              </div>
+
+              {/* Status Pembayaran */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status Pembayaran
+                </label>
+                <select
+                  name="status_pembayaran"
+                  value={editData.status_pembayaran}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      status_pembayaran: e.target.value,
+                    })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="Belum Lunas">Belum Lunas</option>
+                  <option value="Lunas">Lunas</option>
+                </select>
+              </div>
+
+              <div className="flex space-x-4">
+                <button
+                  onClick={handleUpdate}
+                  disabled={isLoading}
+                  className="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+                >
+                  <Save className="mr-2" size={20} />
+                  {isLoading ? "Memperbarui..." : "Simpan Perubahan"}
+                </button>
+                <button
+                  onClick={() => setEditData(null)}
+                  className="flex-1 bg-gray-400 text-white py-3 px-4 rounded-lg hover:bg-gray-500 transition-colors"
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tabel Data */}
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">
+            Daftar Transaksi ({dataList.length})
+          </h2>
+          {isLoading ? (
+            <p>Memuat...</p>
+          ) : dataList.length === 0 ? (
+            <p className="text-center py-4">Belum ada data transaksi</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      No Invoice
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Nama
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Paket
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Durasi
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Harga Paket
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Tgl Berangkat
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      DP1
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Bukti DP1
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Tgl DP1
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      DP2
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Bukti DP2
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Tgl DP2
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Bagasi
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Jml Peserta
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Diskon
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Total
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Sisa
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Status
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Aksi
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {dataList.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm">
+                        {item.nomor_invoice}
+                      </td>
+                      <td className="px-4 py-3 text-sm">{item.nama}</td>
+                      <td className="px-4 py-3 text-sm">{item.paket_tour}</td>
+                      <td className="px-4 py-3 text-sm">{item.durasi_tour}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatCurrency(item.harga_paket)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDate(item.tanggal_keberangkatan)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatCurrency(item.dp1)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.bukti_dp1 ? (
+                          <a
+                            href={item.bukti_dp1}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            Lihat
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDate(item.tanggal_dp1)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatCurrency(item.dp2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.bukti_dp2 ? (
+                          <a
+                            href={item.bukti_dp2}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            Lihat
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDate(item.tanggal_dp2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.bagasi ? formatCurrency(item.bagasi) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.jumlah_peserta}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.diskon ? formatCurrency(item.diskon) : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold">
+                        {formatCurrency(item.total_pembayaran)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatCurrency(item.sisa_pembayaran)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span
+                          className={
+                            item.status_pembayaran === "Lunas"
+                              ? "text-green-600 font-bold"
+                              : "text-red-600 font-semibold"
+                          }
+                        >
+                          {item.status_pembayaran}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <button
+                          onClick={() => handleEdit(item)}
+                          className="text-blue-600 hover:text-blue-800 mr-2"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          className="text-red-600 hover:text-red-800 mr-2"
+                        >
+                          Hapus
+                        </button>
+                        <button
+                          onClick={() => handleDownloadInvoice(item)}
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          Invoice
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const TravelFormApp = () => {
   const [formData, setFormData] = useState<FormData>({
     nama: "",
+    nomor_invoice: "", // ← BARU
     tanggal_daftar: "",
     tanggal_lahir: "",
     jenis_kelamin: "",
@@ -53,6 +1703,7 @@ const TravelFormApp = () => {
     paket_tour: "",
     durasi_tour: "",
     harga_paket: "",
+    bagasi: "",
     tanggal_keberangkatan: "",
   });
   const [fotoPassportBase64, setFotoPassportBase64] = useState<string | null>(
@@ -61,21 +1712,100 @@ const TravelFormApp = () => {
   const [dataList, setDataList] = useState<TravelData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+  const [showScanUpload, setShowScanUpload] = useState(false);
+  const [scanPassportBase64, setScanPassportBase64] = useState<string | null>(
+    null
+  );
+  const [isProcessingScanOCR, setIsProcessingScanOCR] = useState(false);
+  const [invoiceOptions, setInvoiceOptions] = useState<string[]>([]);
+  const [transaksiData, setTransaksiData] = useState<TransaksiData[]>([]);
+  const [showInvoiceDropdown, setShowInvoiceDropdown] = useState(false);
+  const [filteredInvoices, setFilteredInvoices] = useState<string[]>([]);
+  const invoiceInputRef = useRef<HTMLInputElement>(null);
 
+  // Helper: Convert DD-MM-YYYY to YYYY-MM-DD for <input type="date" />
+  const convertDDMMYYYYToISO = (dateStr: string): string => {
+    if (!dateStr) return "";
+
+    // Remove any whitespace
+    dateStr = dateStr.trim();
+
+    // Check if already in ISO format (YYYY-MM-DD)
+    if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return dateStr;
+    }
+
+    // Handle DD-MM-YYYY format
+    const ddmmyyyyMatch = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if (ddmmyyyyMatch) {
+      const [, day, month, year] = ddmmyyyyMatch;
+      // Simply return the reformatted string without Date object validation
+      // to avoid timezone issues
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    // Handle DD/MM/YYYY format (with slashes)
+    const ddmmyyyySlashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmmyyyySlashMatch) {
+      const [, day, month, year] = ddmmyyyySlashMatch;
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+
+    // Try to parse as Date object as fallback
+    try {
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        // Get date components in local timezone to avoid offset issues
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+      }
+    } catch (e) {
+      console.error("Failed to parse date:", dateStr);
+    }
+
+    return "";
+  };
+
+  useEffect(() => {
+    if (formData.nomor_invoice) {
+      const filtered = invoiceOptions.filter((invoice) =>
+        invoice.toLowerCase().includes(formData.nomor_invoice.toLowerCase())
+      );
+      setFilteredInvoices(filtered);
+    } else {
+      setFilteredInvoices(invoiceOptions);
+    }
+  }, [formData.nomor_invoice, invoiceOptions]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        invoiceInputRef.current &&
+        !invoiceInputRef.current.contains(event.target as Node)
+      ) {
+        setShowInvoiceDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  // Fetch data customer & invoice sekali saat mount
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
         const response = await fetch(
-          `${ENDPOINT}?action=read&sheet=TravelData`,
-          {
-            // Asumsikan sheet default adalah TravelData; sesuaikan jika berbeda
-            mode: "cors",
-          }
+          `${ENDPOINT}?action=read&sheet=FormCostumer`,
+          { mode: "cors" }
         );
-        if (!response.ok) {
-          throw new Error("Gagal memuat data");
-        }
+        if (!response.ok) throw new Error("Gagal memuat data");
         const data = await response.json();
         setDataList(
           data.map((item: TravelData, index: number) => ({
@@ -91,14 +1821,69 @@ const TravelFormApp = () => {
         setIsLoading(false);
       }
     };
+
+    const fetchInvoiceOptions = async () => {
+      try {
+        const res = await fetch(`${ENDPOINT}?action=read&sheet=Transaksi`, {
+          mode: "cors",
+        });
+        const data: TransaksiData[] = await res.json();
+        const invoices = data.map((item) => item.nomor_invoice).filter(Boolean);
+        setInvoiceOptions(invoices);
+        setTransaksiData(data); // ← BARU: Simpan seluruh data Transaksi
+      } catch (err) {
+        console.error("Gagal memuat daftar invoice:", err);
+      }
+    };
+
     fetchData();
+    fetchInvoiceOptions();
   }, []);
+
+  // ← BARU: useEffect untuk autofill field berdasarkan nomor_invoice
+  useEffect(() => {
+    if (formData.nomor_invoice && transaksiData.length > 0) {
+      const selectedTransaksi = transaksiData.find(
+        (item) => item.nomor_invoice === formData.nomor_invoice
+      );
+      if (selectedTransaksi) {
+        console.log("Data Transaksi ditemukan:", selectedTransaksi);
+        console.log(
+          "Tanggal keberangkatan mentah:",
+          selectedTransaksi.tanggal_keberangkatan
+        );
+
+        const convertedDate = convertDDMMYYYYToISO(
+          selectedTransaksi.tanggal_keberangkatan
+        );
+        console.log("Tanggal keberangkatan terkonversi:", convertedDate);
+
+        setFormData((prev) => ({
+          ...prev,
+          paket_tour: selectedTransaksi.paket_tour || "",
+          durasi_tour: selectedTransaksi.durasi_tour || "",
+          tanggal_keberangkatan: convertedDate,
+          harga_paket: selectedTransaksi.harga_paket || "",
+        }));
+      } else {
+        console.log("Invoice tidak ditemukan:", formData.nomor_invoice);
+        // Opsional: Reset field jika invoice tidak ditemukan
+        setFormData((prev) => ({
+          ...prev,
+          paket_tour: "",
+          durasi_tour: "",
+          tanggal_keberangkatan: "",
+          harga_paket: "",
+        }));
+      }
+    }
+  }, [formData.nomor_invoice, transaksiData]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    if (name === "harga_paket") {
+    if (name === "harga_paket" || name === "bagasi") {
       const rawValue = value.replace(/\./g, "").replace(/\D/g, "");
       setFormData((prev) => ({
         ...prev,
@@ -133,15 +1918,9 @@ const TravelFormApp = () => {
   const validateForm = () => {
     return (
       formData.nama &&
-      formData.tanggal_daftar &&
       formData.tanggal_lahir &&
       formData.jenis_kelamin &&
-      formData.nomor_passport &&
-      formData.masa_berlaku_passport &&
-      formData.jenis_trip &&
-      formData.paket_tour &&
-      formData.durasi_tour &&
-      formData.harga_paket
+      formData.nomor_passport
     );
   };
 
@@ -158,15 +1937,13 @@ const TravelFormApp = () => {
         timestamp: new Date().toLocaleString("id-ID"),
         foto_passport: fotoPassportBase64
           ? fotoPassportBase64.split(",")[1]
-          : null, // Kirim base64 tanpa prefix
-        sheet: "TravelData", // Asumsikan sheet default
+          : null,
+        sheet: "FormCostumer",
       };
       const response = await fetch(ENDPOINT, {
         method: "POST",
         body: JSON.stringify(dataToSend),
-        headers: {
-          "Content-Type": "text/plain", // Fix CORS preflight
-        },
+        headers: { "Content-Type": "text/plain" },
         mode: "cors",
         redirect: "follow",
       });
@@ -174,7 +1951,7 @@ const TravelFormApp = () => {
         const errorText = await response.text();
         throw new Error(`Gagal menyimpan data: ${errorText}`);
       }
-      const newData = await response.json(); // Asumsikan respons kembali data baru dengan id dan foto_passport
+      const newData = await response.json();
       setDataList((prev) => [
         ...prev,
         {
@@ -186,6 +1963,7 @@ const TravelFormApp = () => {
       ]);
       setFormData({
         nama: "",
+        nomor_invoice: "", // reset juga
         tanggal_daftar: "",
         tanggal_lahir: "",
         jenis_kelamin: "",
@@ -195,6 +1973,7 @@ const TravelFormApp = () => {
         paket_tour: "",
         durasi_tour: "",
         harga_paket: "",
+        bagasi: "",
         tanggal_keberangkatan: "",
       });
       setFotoPassportBase64(null);
@@ -219,15 +1998,10 @@ const TravelFormApp = () => {
       const response = await fetch(
         `${ENDPOINT}?action=delete&passport=${encodeURIComponent(
           id
-        )}&sheet=TravelData`,
-        {
-          method: "GET",
-          mode: "cors",
-        }
+        )}&sheet=FormCostumer`,
+        { method: "GET", mode: "cors" }
       );
-      if (!response.ok) {
-        throw new Error("Gagal menghapus data");
-      }
+      if (!response.ok) throw new Error("Gagal menghapus data");
       setDataList((prev) => prev.filter((item) => item.id !== id));
       setMessage("Data berhasil dihapus!");
       setTimeout(() => setMessage(""), 3000);
@@ -253,13 +2027,30 @@ const TravelFormApp = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      {isLoading && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+          style={{ zIndex: 40 }}
+        >
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-xl font-semibold text-gray-800">
+              Mohon Tunggu...
+            </p>
+            <p className="text-sm text-gray-600 mt-2">
+              Sedang memuat data perjalanan
+            </p>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center">
-          {/* Logo Section */}
+        <div
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          style={{ zIndex: 50 }}
+        >
           <div className="mb-4">
             <img
-              src="/logo_daeng_travel.png" // Sesuaikan nama file jika Anda menggunakan nama lain
+              src="/logo_daeng_travel.png"
               alt="Logo Aplikasi"
               className="mx-auto h-20 object-contain"
             />
@@ -277,10 +2068,12 @@ const TravelFormApp = () => {
             <Link to="/data-customer" className="text-blue-600 hover:underline">
               Data Customer
             </Link>
+            <Link to="/transaksi" className="text-blue-600 hover:underline">
+              Transaksi
+            </Link>
           </div>
         </div>
 
-        {/* Message */}
         {message && (
           <div
             className={`mb-4 p-4 rounded-lg ${
@@ -297,14 +2090,12 @@ const TravelFormApp = () => {
           {/* Form Input */}
           <div className="bg-white rounded-lg shadow-lg p-6">
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-              <Plus className="mr-2" size={24} />
-              Tambah Data Baru
+              <Plus className="mr-2" size={24} /> Tambah Data Baru
             </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <User size={16} className="mr-1" />
-                  Nama
+                  <User size={16} className="mr-1" /> Nama
                 </label>
                 <input
                   type="text"
@@ -315,10 +2106,47 @@ const TravelFormApp = () => {
                   placeholder="Masukkan nama lengkap"
                 />
               </div>
+
+              {/* Dropdown Nomor Invoice */}
+              <div className="relative" ref={invoiceInputRef}>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <FileText size={16} className="mr-1" /> Nomor Invoice
+                </label>
+                <input
+                  type="text"
+                  name="nomor_invoice"
+                  value={formData.nomor_invoice}
+                  onChange={handleInputChange}
+                  onFocus={() => setShowInvoiceDropdown(true)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Ketik atau pilih nomor invoice"
+                  autoComplete="off"
+                />
+                {showInvoiceDropdown && filteredInvoices.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredInvoices.map((invoice) => (
+                      <div
+                        key={invoice}
+                        onClick={() => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            nomor_invoice: invoice,
+                          }));
+                          setShowInvoiceDropdown(false);
+                        }}
+                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                      >
+                        {invoice}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Sisa form tetap sama */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Daftar
+                  <Calendar size={16} className="mr-1" /> Tanggal Daftar
                 </label>
                 <input
                   type="date"
@@ -330,8 +2158,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Lahir
+                  <Calendar size={16} className="mr-1" /> Tanggal Lahir
                 </label>
                 <input
                   type="date"
@@ -358,8 +2185,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <FileText size={16} className="mr-1" />
-                  Nomor Passport
+                  <FileText size={16} className="mr-1" /> Nomor Passport
                 </label>
                 <input
                   type="text"
@@ -372,8 +2198,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Masa Berlaku Passport
+                  <Calendar size={16} className="mr-1" /> Masa Berlaku Passport
                 </label>
                 <input
                   type="date"
@@ -385,8 +2210,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <MapPin size={16} className="mr-1" />
-                  Jenis Trip
+                  <MapPin size={16} className="mr-1" /> Jenis Trip
                 </label>
                 <select
                   name="jenis_trip"
@@ -403,8 +2227,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Package size={16} className="mr-1" />
-                  Paket Tour
+                  <Package size={16} className="mr-1" /> Paket Tour
                 </label>
                 <select
                   name="paket_tour"
@@ -423,8 +2246,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Clock size={16} className="mr-1" />
-                  Durasi Tour
+                  <Clock size={16} className="mr-1" /> Durasi Tour
                 </label>
                 <select
                   name="durasi_tour"
@@ -442,8 +2264,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <DollarSign size={16} className="mr-1" />
-                  Harga Paket
+                  <DollarSign size={16} className="mr-1" /> Harga Paket
                 </label>
                 <input
                   type="text"
@@ -456,8 +2277,20 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Keberangkatan
+                  <Package size={16} className="mr-1" /> Harga Bagasi (Opsional)
+                </label>
+                <input
+                  type="text"
+                  name="bagasi"
+                  value={formatInputNumber(formData.bagasi)}
+                  onChange={handleInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Contoh: 300000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Calendar size={16} className="mr-1" /> Tanggal Keberangkatan
                 </label>
                 <input
                   type="date"
@@ -469,8 +2302,7 @@ const TravelFormApp = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Image size={16} className="mr-1" />
-                  Foto Passport
+                  <Image size={16} className="mr-1" /> Foto Passport
                 </label>
                 <input
                   type="file"
@@ -609,9 +2441,6 @@ const TravelFormApp = () => {
           </ul>
           <p className="text-sm text-yellow-700 mt-2">
             Ganti ENDPOINT dengan URL Web App dari Google Apps Script Anda.
-            Script harus menangani POST untuk create, GET dengan action=read
-            untuk read, dan action=delete untuk delete. Tambahkan dukungan untuk
-            parameter 'sheet' jika diperlukan.
           </p>
         </div>
       </div>
@@ -620,7 +2449,7 @@ const TravelFormApp = () => {
 };
 
 const CustomerDataPage = () => {
-  const [dataList, setDataList] = useState<TravelData[]>([]); // Asumsikan struktur data mirip; sesuaikan jika berbeda
+  const [dataList, setDataList] = useState<TravelData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [searchName, setSearchName] = useState("");
@@ -634,9 +2463,46 @@ const CustomerDataPage = () => {
     string | null
   >(null);
   const [isEditFormOpened, setIsEditFormOpened] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [invoiceOptions, setInvoiceOptions] = useState<string[]>([]);
+  const [transaksiData, setTransaksiData] = useState<TransaksiData[]>([]);
+  const [showEditInvoiceDropdown, setShowEditInvoiceDropdown] = useState(false);
+  const [filteredEditInvoices, setFilteredEditInvoices] = useState<string[]>(
+    []
+  );
+  const editInvoiceInputRef = useRef<HTMLInputElement>(null);
+  const editFormRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editData?.nomor_invoice) {
+      const filtered = invoiceOptions.filter((invoice) =>
+        invoice.toLowerCase().includes(editData.nomor_invoice.toLowerCase())
+      );
+      setFilteredEditInvoices(filtered);
+    } else {
+      setFilteredEditInvoices(invoiceOptions);
+    }
+  }, [editData?.nomor_invoice, invoiceOptions]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        editInvoiceInputRef.current &&
+        !editInvoiceInputRef.current.contains(event.target as Node)
+      ) {
+        setShowEditInvoiceDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     fetchData();
+    fetchInvoiceOptions();
   }, []);
 
   const fetchData = async () => {
@@ -644,19 +2510,14 @@ const CustomerDataPage = () => {
     try {
       const response = await fetch(
         `${ENDPOINT}?action=read&sheet=FormCostumer`,
-        {
-          mode: "cors",
-        }
+        { mode: "cors" }
       );
-      if (!response.ok) {
-        throw new Error("Gagal memuat data");
-      }
+      if (!response.ok) throw new Error("Gagal memuat data");
       const data = await response.json();
       setDataList(
         data.map((item: any) => ({
           ...item,
-          // Perbaikan Kunci: Pastikan id selalu diambil dari nomor_passport
-          id: item.nomor_passport.toString(), // Konversi ke string untuk konsistensi
+          id: item.nomor_passport.toString(),
           harga_paket: String(item.harga_paket),
         }))
       );
@@ -668,50 +2529,43 @@ const CustomerDataPage = () => {
     }
   };
 
-  const formatCurrency = (value: string) => {
-    if (!value) return "";
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-    }).format(Number(value));
+  const fetchInvoiceOptions = async () => {
+    try {
+      const res = await fetch(`${ENDPOINT}?action=read&sheet=Transaksi`, {
+        mode: "cors",
+      });
+      const data: TransaksiData[] = await res.json();
+      const invoices = data.map((item) => item.nomor_invoice).filter(Boolean);
+      setInvoiceOptions(invoices);
+      setTransaksiData(data); // Simpan seluruh data Transaksi
+    } catch (err) {
+      console.error("Gagal memuat daftar invoice:", err);
+    }
   };
 
-  // Fungsi helper untuk parsing tanggal dari berbagai format
   const parseDate = (dateString: string): Date | null => {
     if (!dateString) return null;
     try {
       let date: Date | null = null;
-      // Handle ISO timestamps directly
       if (dateString.includes("T")) {
         date = new Date(dateString);
       } else {
-        // Normalize '/' to '-' and split
         const parts = dateString.replace(/\//g, "-").split("-");
         if (parts.length === 3) {
           let day = parseInt(parts[0], 10);
           let month = parseInt(parts[1], 10);
           let year = parseInt(parts[2], 10);
-          // Handle 2-digit year (assume 2000+)
           if (year < 100) year += 2000;
           if (parts[0].length === 4) {
-            // yyyy-mm-dd
             day = parseInt(parts[2], 10);
             month = parseInt(parts[1], 10);
             year = parseInt(parts[0], 10);
-          } else if (parts[2].length === 4) {
-            // dd-mm-yyyy
-            day = parseInt(parts[0], 10);
-            month = parseInt(parts[1], 10);
-            year = parseInt(parts[2], 10);
           }
-          // Create date and validate
           date = new Date(year, month - 1, day);
         } else {
-          // Fallback for other formats
           date = new Date(dateString);
         }
       }
-      // Validate
       if (date && !isNaN(date.getTime())) {
         return date;
       }
@@ -721,26 +2575,20 @@ const CustomerDataPage = () => {
     }
   };
 
-  // Fungsi untuk memformat tanggal menjadi dd-mm-yyyy
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
     const date = parseDate(dateString);
-    if (!date) {
-      return dateString; // Kembalikan string asli jika tidak bisa diparse
-    }
-    // Format ke dd-mm-yyyy
+    if (!date) return dateString;
     const day = date.getDate().toString().padStart(2, "0");
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const year = date.getFullYear();
     return `${day}-${month}-${year}`;
   };
 
-  // Fungsi untuk mengkonversi tanggal ke format yyyy-mm-dd untuk perbandingan dan input date
   const dateToComparable = (dateString: string): string => {
     if (!dateString) return "";
     const date = parseDate(dateString);
-    if (date === null) return "";
-    if (isNaN(date.getTime())) return "";
+    if (!date) return "";
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const day = date.getDate().toString().padStart(2, "0");
@@ -751,7 +2599,6 @@ const CustomerDataPage = () => {
     const nameMatch = item.nama
       .toLowerCase()
       .includes(searchName.toLowerCase());
-    // Konversi tanggal ke format yang bisa dibandingkan (yyyy-mm-dd)
     const itemTanggalDaftar = dateToComparable(item.tanggal_daftar);
     const itemTanggalKeberangkatan = dateToComparable(
       item.tanggal_keberangkatan
@@ -775,10 +2622,16 @@ const CustomerDataPage = () => {
     setSelectedPaket("");
   };
 
+  const formatCurrency = (value: string) => {
+    if (!value) return "";
+    return new Intl.NumberFormat("id-ID", {
+      style: "currency",
+      currency: "IDR",
+    }).format(Number(value));
+  };
+
   const handleDownloadPDF = () => {
-    const doc = new jsPDF({
-      orientation: "landscape",
-    });
+    const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(16);
     doc.text("Data Customer", 14, 15);
     autoTable(doc, {
@@ -808,6 +2661,218 @@ const CustomerDataPage = () => {
     doc.save("data_customer.pdf");
   };
 
+  const calculatePeriod = (
+    tanggalKeberangkatan: string,
+    durasiTour: string
+  ): string => {
+    const date = parseDate(tanggalKeberangkatan);
+    if (!date) return "Invalid Date";
+    const dayMatch = durasiTour.match(/^(\d+)D/);
+    const days = dayMatch ? parseInt(dayMatch[1], 10) : 1;
+    const endDate = new Date(date);
+    endDate.setDate(date.getDate() + days - 1);
+    const options: Intl.DateTimeFormatOptions = {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    };
+    const startDateFormatted = date.toLocaleDateString("id-ID", options);
+    const endDateFormatted = endDate.toLocaleDateString("id-ID", options);
+    return `${startDateFormatted} - ${endDateFormatted}`;
+  };
+
+  const handleDownloadInvoice = () => {
+    const selectedData = filteredData.filter((item) =>
+      selectedIds.has(item.id)
+    );
+    if (selectedData.length === 0) {
+      setMessage("Pilih setidaknya satu data untuk invoice");
+      setTimeout(() => setMessage(""), 3000);
+      return;
+    }
+    const totalBagasi = selectedData.reduce(
+      (sum, item) => sum + (Number(item.bagasi) || 0),
+      0
+    );
+    const pax = selectedData.length;
+    const totalAmount = selectedData.reduce(
+      (sum, item) => sum + Number(item.harga_paket),
+      0
+    );
+    const grandTotal = totalAmount + totalBagasi;
+    const pricePerPax = (totalAmount / pax).toFixed(0);
+    const bagasiPerPax = totalBagasi > 0 ? (totalBagasi / pax).toFixed(0) : "0";
+    const program =
+      selectedData[0].paket_tour +
+      "  " +
+      selectedData[0].durasi_tour.replace("D ", "H").replace("N", "M");
+    const tanggal = new Date().toLocaleDateString("id-ID", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+    const invoiceNo = "008";
+    const terbilang = bilangRupiah(grandTotal) + " Rupiah";
+    const doc = new jsPDF();
+    doc.addImage("/logo_daeng_travel.png", "PNG", 10, 17, 40, 16);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("CV. DAENG WISATA INDONESIA TOUR & TRAVEL", 105, 20, {
+      align: "center",
+    });
+    doc.setFont("helvetica", "normal");
+    doc.text("Call/WA: 085256 268 727", 105, 25, { align: "center" });
+    doc.text("Email: daengwisataindonesia@gmail.com", 105, 30, {
+      align: "center",
+    });
+    doc.text("Head Office: Perumahan Green House Alauddin, Makassar", 105, 35, {
+      align: "center",
+    });
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(10, 40, 200, 40);
+    doc.setFontSize(10);
+    doc.text("Booking Konfirmasi:", 15, 60);
+    doc.text(`Tanggal : ${tanggal}`, 15, 70);
+    doc.text(`Invoice No : ${invoiceNo}`, 105, 70);
+    doc.text("Nama : ", 15, 80);
+    doc.text(`Peserta : ${pax} Pax`, 105, 80);
+    doc.text(`Program : Tour ${program}`, 15, 90);
+    const periode = calculatePeriod(
+      selectedData[0].tanggal_keberangkatan,
+      selectedData[0].durasi_tour
+    );
+    doc.text(`Periode : ${periode}`, 15, 100);
+    const invoiceBody = [
+      [
+        "1",
+        `Paket Tour ${program}`,
+        formatNumber(pricePerPax),
+        "1",
+        String(pax),
+        formatNumber(totalAmount.toString()),
+      ],
+    ];
+    if (totalBagasi > 0) {
+      invoiceBody.push([
+        "2",
+        "Biaya Bagasi",
+        formatNumber(bagasiPerPax),
+        "-",
+        String(pax),
+        formatNumber(totalBagasi.toString()),
+      ]);
+    }
+    autoTable(doc, {
+      startY: 110,
+      head: [["No", "Description", "Price", "Pkg", "Pax", "Total"]],
+      body: invoiceBody,
+      foot: [["", "", "", "", "Total", formatNumber(grandTotal.toString())]],
+      theme: "grid",
+      styles: { fontSize: 10 },
+    });
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY,
+      body: [[`Says: ${terbilang}`]],
+      theme: "grid",
+      styles: { fontSize: 10 },
+      columnStyles: { 0: { cellWidth: "auto" } },
+    });
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY,
+      body: [
+        ["DP1", ""],
+        ["DP2", ""],
+        ["Sisa", formatNumber(grandTotal.toString())],
+      ],
+      theme: "grid",
+      styles: { fontSize: 10 },
+      columnStyles: { 0: { cellWidth: 50 }, 1: { cellWidth: 50 } },
+    });
+    let yPos = (doc as any).lastAutoTable.finalY + 10;
+    doc.text("NOTE: LUNAS", 15, yPos);
+    doc.text(
+      "Balance/Pelunasan paling lambat H-20 Keberangkatan",
+      15,
+      yPos + 10
+    );
+    yPos += 20;
+    doc.text("BANK ACCOUNT", 15, yPos);
+    yPos += 10;
+    doc.text("BANK MANDIRI", 15, yPos);
+    doc.text("Account No : 1810 0020 03748", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BCA", 15, yPos);
+    doc.text("Account No : 7970 42 6064", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BRI", 15, yPos);
+    doc.text("AccountNo.: 382401017088539", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    yPos += 20;
+    doc.text("BANK BNI", 15, yPos);
+    doc.text("Account No. : 0558 67 7534", 15, yPos + 5);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 10);
+    doc.text("Account No. : 2410 61 2436", 15, yPos + 15);
+    doc.text("Beneficiary: MUHAMMAD AZHAR", 15, yPos + 20);
+    doc.text("Best Regards", 150, yPos + 30);
+    doc.text("Daeng Travel", 150, yPos + 50);
+    doc.save("invoice.pdf");
+  };
+
+  const formatNumber = (num: string) => {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  };
+
+  const bilangRupiah = (angka: number): string => {
+    const bilangan = [
+      "",
+      "Satu",
+      "Dua",
+      "Tiga",
+      "Empat",
+      "Lima",
+      "Enam",
+      "Tujuh",
+      "Delapan",
+      "Sembilan",
+      "Sepuluh",
+      "Sebelas",
+    ];
+    if (angka < 12) return bilangan[angka];
+    if (angka < 20) return bilangRupiah(angka - 10) + " Belas";
+    if (angka < 100)
+      return (
+        bilangRupiah(Math.floor(angka / 10)) +
+        " Puluh" +
+        (angka % 10 ? " " + bilangRupiah(angka % 10) : "")
+      );
+    if (angka < 200)
+      return "Seratus" + (angka % 100 ? " " + bilangRupiah(angka % 100) : "");
+    if (angka < 1000)
+      return (
+        bilangRupiah(Math.floor(angka / 100)) +
+        " Ratus" +
+        (angka % 100 ? " " + bilangRupiah(angka % 100) : "")
+      );
+    if (angka < 2000)
+      return "Seribu" + (angka % 1000 ? " " + bilangRupiah(angka % 1000) : "");
+    if (angka < 1000000)
+      return (
+        bilangRupiah(Math.floor(angka / 1000)) +
+        " Ribu" +
+        (angka % 1000 ? " " + bilangRupiah(angka % 1000) : "")
+      );
+    if (angka < 1000000000)
+      return (
+        bilangRupiah(Math.floor(angka / 1000000)) +
+        " Juta" +
+        (angka % 1000000 ? " " + bilangRupiah(angka % 1000000) : "")
+      );
+    return "";
+  };
+
   const handleDelete = async (id: string) => {
     if (!window.confirm("Apakah Anda yakin ingin menghapus data ini?")) return;
     setIsLoading(true);
@@ -816,14 +2881,9 @@ const CustomerDataPage = () => {
         `${ENDPOINT}?action=delete&passport=${encodeURIComponent(
           id
         )}&sheet=FormCostumer`,
-        {
-          method: "GET",
-          mode: "cors",
-        }
+        { method: "GET", mode: "cors" }
       );
-      if (!response.ok) {
-        throw new Error("Gagal menghapus data");
-      }
+      if (!response.ok) throw new Error("Gagal menghapus data");
       setDataList((prev) => prev.filter((item) => item.id !== id));
       setMessage("Data berhasil dihapus!");
       setTimeout(() => setMessage(""), 3000);
@@ -840,7 +2900,6 @@ const CustomerDataPage = () => {
   };
 
   const handleEdit = (item: TravelData) => {
-    console.log("Item yang akan diedit:", item); // Debug log
     setEditData({
       ...item,
       tanggal_daftar: dateToComparable(item.tanggal_daftar),
@@ -848,6 +2907,7 @@ const CustomerDataPage = () => {
       masa_berlaku_passport: dateToComparable(item.masa_berlaku_passport),
       tanggal_keberangkatan: dateToComparable(item.tanggal_keberangkatan),
       harga_paket: String(item.harga_paket),
+      bagasi: String(item.bagasi || ""),
       old_nomor_passport: item.nomor_passport,
     });
     setNewFotoPassportBase64(null);
@@ -859,17 +2919,11 @@ const CustomerDataPage = () => {
   ) => {
     const { name, value } = e.target;
     if (editData) {
-      if (name === "harga_paket") {
+      if (name === "harga_paket" || name === "bagasi") {
         const rawValue = value.replace(/\./g, "").replace(/\D/g, "");
-        setEditData((prev) => ({
-          ...prev!,
-          [name]: rawValue,
-        }));
+        setEditData({ ...editData, [name]: rawValue });
       } else {
-        setEditData((prev) => ({
-          ...prev!,
-          [name]: value,
-        }));
+        setEditData({ ...editData, [name]: value });
       }
     }
   };
@@ -878,14 +2932,12 @@ const CustomerDataPage = () => {
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
       const reader = new FileReader();
       reader.onload = (event) => {
-        if (event.target) {
+        if (event.target)
           setNewFotoPassportBase64(event.target.result as string);
-        }
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(e.target.files[0]);
     }
   };
 
@@ -896,12 +2948,7 @@ const CustomerDataPage = () => {
       editData.tanggal_daftar &&
       editData.tanggal_lahir &&
       editData.jenis_kelamin &&
-      editData.nomor_passport &&
-      editData.masa_berlaku_passport &&
-      editData.jenis_trip &&
-      editData.paket_tour &&
-      editData.durasi_tour &&
-      editData.harga_paket
+      editData.nomor_passport
     );
   };
 
@@ -920,15 +2967,13 @@ const CustomerDataPage = () => {
           editData.old_nomor_passport || editData.nomor_passport,
         foto_passport: newFotoPassportBase64
           ? newFotoPassportBase64.split(",")[1]
-          : null, // Kirim null jika tidak ada perubahan foto
+          : null,
         sheet: "FormCostumer",
       };
       const response = await fetch(ENDPOINT, {
         method: "POST",
         body: JSON.stringify(dataToSend),
-        headers: {
-          "Content-Type": "text/plain",
-        },
+        headers: { "Content-Type": "text/plain" },
         mode: "cors",
         redirect: "follow",
       });
@@ -976,8 +3021,6 @@ const CustomerDataPage = () => {
     return value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   };
 
-  const editFormRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     if (isEditFormOpened && editFormRef.current) {
       editFormRef.current.scrollIntoView({
@@ -986,17 +3029,52 @@ const CustomerDataPage = () => {
       });
       setIsEditFormOpened(false);
     }
-  }, [isEditFormOpened]); //
+  }, [isEditFormOpened]);
+
+  const handleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredData.length) {
+      setSelectedIds(new Set());
+    } else {
+      const allIds = new Set(filteredData.map((item) => item.id));
+      setSelectedIds(allIds);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      {isLoading && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
+          style={{ zIndex: 40 }}
+        >
+          <div className="bg-white rounded-lg p-8 shadow-xl text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-xl font-semibold text-gray-800">
+              Mohon Tunggu...
+            </p>
+            <p className="text-sm text-gray-600 mt-2">
+              Sedang memuat data customer
+            </p>
+          </div>
+        </div>
+      )}
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center">
-          {/* Logo Section */}
+        <div
+          className="bg-white rounded-lg shadow-lg p-6 mb-6 text-center relative"
+          style={{ zIndex: 50 }}
+        >
           <div className="mb-4">
             <img
-              src="/logo_daeng_travel.png" // Sesuaikan nama file jika Anda menggunakan nama lain
+              src="/logo_daeng_travel.png"
               alt="Logo Aplikasi"
               className="mx-auto h-20 object-contain"
             />
@@ -1012,10 +3090,12 @@ const CustomerDataPage = () => {
             <Link to="/data-customer" className="text-blue-600 hover:underline">
               Data Customer
             </Link>
+            <Link to="/transaksi" className="text-blue-600 hover:underline">
+              Transaksi
+            </Link>
           </div>
         </div>
 
-        {/* Message */}
         {message && (
           <div
             className={`mb-4 p-4 rounded-lg ${
@@ -1028,21 +3108,18 @@ const CustomerDataPage = () => {
           </div>
         )}
 
-        {/* Edit Form if editing */}
         {editData && (
           <div
             ref={editFormRef}
             className="bg-white rounded-lg shadow-lg p-6 mb-6"
           >
             <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
-              <Edit className="mr-2" size={24} />
-              Edit Data
+              <Edit className="mr-2" size={24} /> Edit Data
             </h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <User size={16} className="mr-1" />
-                  Nama
+                  <User size={16} className="mr-1" /> Nama
                 </label>
                 <input
                   type="text"
@@ -1053,10 +3130,42 @@ const CustomerDataPage = () => {
                   placeholder="Masukkan nama lengkap"
                 />
               </div>
+              <div className="relative" ref={editInvoiceInputRef}>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <FileText size={16} className="mr-1" /> Nomor Invoice
+                </label>
+                <input
+                  type="text"
+                  name="nomor_invoice"
+                  value={editData.nomor_invoice || ""}
+                  onChange={handleEditInputChange}
+                  onFocus={() => setShowEditInvoiceDropdown(true)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Ketik atau pilih nomor invoice"
+                  autoComplete="off"
+                />
+                {showEditInvoiceDropdown && filteredEditInvoices.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {filteredEditInvoices.map((invoice) => (
+                      <div
+                        key={invoice}
+                        onClick={() => {
+                          setEditData((prev) =>
+                            prev ? { ...prev, nomor_invoice: invoice } : null
+                          );
+                          setShowEditInvoiceDropdown(false);
+                        }}
+                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                      >
+                        {invoice}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Daftar
+                  <Calendar size={16} className="mr-1" /> Tanggal Daftar
                 </label>
                 <input
                   type="date"
@@ -1068,8 +3177,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Lahir
+                  <Calendar size={16} className="mr-1" /> Tanggal Lahir
                 </label>
                 <input
                   type="date"
@@ -1096,8 +3204,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <FileText size={16} className="mr-1" />
-                  Nomor Passport
+                  <FileText size={16} className="mr-1" /> Nomor Passport
                 </label>
                 <input
                   type="text"
@@ -1110,8 +3217,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Masa Berlaku Passport
+                  <Calendar size={16} className="mr-1" /> Masa Berlaku Passport
                 </label>
                 <input
                   type="date"
@@ -1123,8 +3229,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <MapPin size={16} className="mr-1" />
-                  Jenis Trip
+                  <MapPin size={16} className="mr-1" /> Jenis Trip
                 </label>
                 <select
                   name="jenis_trip"
@@ -1141,8 +3246,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Package size={16} className="mr-1" />
-                  Paket Tour
+                  <Package size={16} className="mr-1" /> Paket Tour
                 </label>
                 <select
                   name="paket_tour"
@@ -1161,8 +3265,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Clock size={16} className="mr-1" />
-                  Durasi Tour
+                  <Clock size={16} className="mr-1" /> Durasi Tour
                 </label>
                 <select
                   name="durasi_tour"
@@ -1180,8 +3283,7 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <DollarSign size={16} className="mr-1" />
-                  Harga Paket
+                  <DollarSign size={16} className="mr-1" /> Harga Paket
                 </label>
                 <input
                   type="text"
@@ -1194,8 +3296,20 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Calendar size={16} className="mr-1" />
-                  Tanggal Keberangkatan
+                  <Package size={16} className="mr-1" /> Harga Bagasi (Opsional)
+                </label>
+                <input
+                  type="text"
+                  name="bagasi"
+                  value={formatInputNumber(editData.bagasi)}
+                  onChange={handleEditInputChange}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Contoh: 300000"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Calendar size={16} className="mr-1" /> Tanggal Keberangkatan
                 </label>
                 <input
                   type="date"
@@ -1207,8 +3321,8 @@ const CustomerDataPage = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                  <Image size={16} className="mr-1" />
-                  Ganti Foto Passport (opsional)
+                  <Image size={16} className="mr-1" /> Ganti Foto Passport
+                  (opsional)
                 </label>
                 <input
                   type="file"
@@ -1236,7 +3350,7 @@ const CustomerDataPage = () => {
                   disabled={isLoading}
                   className="flex-1 bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
                 >
-                  <Save className="mr-2" size={20} />
+                  <Save className="mr-2" size={20} />{" "}
                   {isLoading ? "Memperbarui..." : "Update Data"}
                 </button>
                 <button
@@ -1250,7 +3364,6 @@ const CustomerDataPage = () => {
           </div>
         )}
 
-        {/* Filters */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">
             Filter Data
@@ -1345,10 +3458,16 @@ const CustomerDataPage = () => {
             >
               Download PDF
             </button>
+            <button
+              onClick={handleDownloadInvoice}
+              className="bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700"
+              disabled={filteredData.length === 0}
+            >
+              Download Invoice
+            </button>
           </div>
         </div>
 
-        {/* Table */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">
             Data Customer ({filteredData.length})
@@ -1366,10 +3485,20 @@ const CustomerDataPage = () => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === filteredData.length}
+                        onChange={handleSelectAll}
+                      />
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       No.
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Nama
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Nomor Invoice
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Tanggal Daftar
@@ -1399,6 +3528,9 @@ const CustomerDataPage = () => {
                       Harga Paket
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Harga Bagasi
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Tanggal Keberangkatan
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1413,77 +3545,100 @@ const CustomerDataPage = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredData.map((item, index) => (
-                    <tr key={item.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {index + 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.nama}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(item.tanggal_daftar)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(item.tanggal_lahir)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.jenis_kelamin}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.nomor_passport}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(item.masa_berlaku_passport)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.jenis_trip}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.paket_tour}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.durasi_tour}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatCurrency(item.harga_paket)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(item.tanggal_keberangkatan)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {item.foto_passport ? (
-                          <a
-                            href={item.foto_passport}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
+                  {filteredData.map((item, index) => {
+                    const matchingTransaksi = transaksiData.find(
+                      (t) => t.nomor_invoice === item.nomor_invoice
+                    );
+                    const isLunas =
+                      matchingTransaksi?.status_pembayaran === "Lunas";
+                    return (
+                      <tr
+                        key={item.id}
+                        className={isLunas ? "bg-green-100" : ""}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(item.id)}
+                            onChange={() => handleSelect(item.id)}
+                          />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {index + 1}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.nama}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.nomor_invoice || "-"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(item.tanggal_daftar)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(item.tanggal_lahir)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.jenis_kelamin}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.nomor_passport}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(item.masa_berlaku_passport)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.jenis_trip}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.paket_tour}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.durasi_tour}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatCurrency(item.harga_paket)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.bagasi ? formatCurrency(item.bagasi) : "-"}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(item.tanggal_keberangkatan)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.foto_passport ? (
+                            <a
+                              href={item.foto_passport}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              Lihat Foto
+                            </a>
+                          ) : (
+                            "Tidak ada"
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {formatDate(item.timestamp)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <button
+                            onClick={() => handleEdit(item)}
+                            className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 mr-2"
                           >
-                            Lihat Foto
-                          </a>
-                        ) : (
-                          "Tidak ada"
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {formatDate(item.timestamp)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <button
-                          onClick={() => handleEdit(item)}
-                          className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50 mr-2"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item.id)}
-                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            <Edit size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item.id)}
+                            className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1499,8 +3654,8 @@ const App = () => (
     <Routes>
       <Route path="/" element={<TravelFormApp />} />
       <Route path="/data-customer" element={<CustomerDataPage />} />
+      <Route path="/transaksi" element={<TransaksiPage />} />
     </Routes>
   </Router>
 );
-
 export default App;
