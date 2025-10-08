@@ -39,6 +39,7 @@ type TransaksiData = {
   nama: string;
   paket_tour: string;
   harga_paket: string;
+  tanggal_daftar: string;
   tanggal_keberangkatan: string;
   durasi_tour: string;
   dp1: string;
@@ -63,7 +64,7 @@ interface TravelData extends FormData {
 }
 
 const ENDPOINT =
-  "https://script.google.com/macros/s/AKfycbxNFteH45eVs9e8yzGICBvIou_-gcVLjF7jZ8WyAijyMQu0V5gPJrLG7C_SJVGCQ7Vw/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
+  "https://script.google.com/macros/s/AKfycbyg6rGgI2t1AaLax5t-16oIyu1yQYyJ8jO9RDV64c51ywtYXMbiCeNrvhfmvgsT30cwwg/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
 
 const TransaksiPage = () => {
   const [formData, setFormData] = useState<Omit<TransaksiData, "id">>({
@@ -71,6 +72,7 @@ const TransaksiPage = () => {
     nama: "",
     paket_tour: "",
     harga_paket: "",
+    tanggal_daftar: "",
     tanggal_keberangkatan: "",
     durasi_tour: "",
     dp1: "",
@@ -98,6 +100,7 @@ const TransaksiPage = () => {
   const editFormRef = useRef<HTMLDivElement>(null);
   const [isEditFormOpened, setIsEditFormOpened] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [totalOmzet, setTotalOmzet] = useState(0);
 
   const parseDate = (dateString: string): Date | null => {
     if (!dateString) return null;
@@ -308,12 +311,18 @@ const TransaksiPage = () => {
         mode: "cors",
       });
       const data = await res.json();
-      setDataList(
-        data.map((item: any) => ({
-          ...item,
-          id: item.nomor_invoice,
-        }))
+      const formattedData = data.map((item: any) => ({
+        ...item,
+        id: item.nomor_invoice,
+      }));
+      setDataList(formattedData);
+
+      // Hitung total omzet
+      const total = formattedData.reduce(
+        (sum, item) => sum + Number(item.total_pembayaran || 0),
+        0
       );
+      setTotalOmzet(total);
     } catch (err) {
       setMessage("Gagal memuat data transaksi");
       setTimeout(() => setMessage(""), 3000);
@@ -854,6 +863,18 @@ const TransaksiPage = () => {
           </div>
         )}
 
+        {totalOmzet > 0 && (
+          <div className="bg-green-100 border border-green-200 rounded-lg p-4 mb-6 text-center">
+            <h2 className="text-xl font-bold text-green-800">
+              Total Omzet: {formatCurrency(String(totalOmzet))}
+            </h2>
+            <p className="text-sm text-green-600 mt-1">
+              Berdasarkan total pembayaran semua transaksi ({dataList.length}{" "}
+              item)
+            </p>
+          </div>
+        )}
+
         {/* Form Input */}
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
@@ -942,6 +963,19 @@ const TransaksiPage = () => {
                 onChange={handleInputChange}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Contoh: 5000000"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                <Calendar size={16} className="mr-1" />
+                Tanggal Daftar
+              </label>
+              <input
+                type="date"
+                name="tanggal_daftar"
+                value={formData.tanggal_daftar}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <div>
@@ -1256,6 +1290,21 @@ const TransaksiPage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                   <Calendar size={16} className="mr-1" />
+                  Tanggal Daftar
+                </label>
+                <input
+                  type="date"
+                  name="tanggal_daftar"
+                  value={editData.tanggal_daftar}
+                  onChange={(e) =>
+                    setEditData({ ...editData, tanggal_daftar: e.target.value })
+                  }
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Calendar size={16} className="mr-1" />
                   Tanggal Keberangkatan
                 </label>
                 <input
@@ -1548,6 +1597,9 @@ const TransaksiPage = () => {
                       Harga Paket
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Tgl Daftar
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Tgl Berangkat
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -1602,6 +1654,9 @@ const TransaksiPage = () => {
                       <td className="px-4 py-3 text-sm">{item.durasi_tour}</td>
                       <td className="px-4 py-3 text-sm">
                         {formatCurrency(item.harga_paket)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDate(item.tanggal_daftar)}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {formatDate(item.tanggal_keberangkatan)}
@@ -1878,6 +1933,8 @@ const TravelFormApp = () => {
           durasi_tour: selectedTransaksi.durasi_tour || "",
           tanggal_keberangkatan: convertedDate,
           harga_paket: selectedTransaksi.harga_paket || "",
+          tanggal_daftar:
+            convertDDMMYYYYToISO(selectedTransaksi.tanggal_daftar) || "",
         }));
       } else {
         console.log("Invoice tidak ditemukan:", formData.nomor_invoice);
@@ -1888,6 +1945,7 @@ const TravelFormApp = () => {
           durasi_tour: "",
           tanggal_keberangkatan: "",
           harga_paket: "",
+          tanggal_daftar: "",
         }));
       }
     }
