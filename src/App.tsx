@@ -1963,10 +1963,14 @@ const TravelFormApp = () => {
     null
   );
   const [isProcessingScanOCR, setIsProcessingScanOCR] = useState(false);
-  const [invoiceOptions, setInvoiceOptions] = useState<string[]>([]);
+  const [invoiceOptions, setInvoiceOptions] = useState<
+    { invoice: string; name: string }[]
+  >([]);
   const [transaksiData, setTransaksiData] = useState<TransaksiData[]>([]);
   const [showInvoiceDropdown, setShowInvoiceDropdown] = useState(false);
-  const [filteredInvoices, setFilteredInvoices] = useState<string[]>([]);
+  const [filteredInvoices, setFilteredInvoices] = useState<
+    { invoice: string; name: string }[]
+  >([]);
   const invoiceInputRef = useRef<HTMLInputElement>(null);
 
   // Helper: Convert DD-MM-YYYY to YYYY-MM-DD for <input type="date" />
@@ -2016,8 +2020,11 @@ const TravelFormApp = () => {
 
   useEffect(() => {
     if (formData.nomor_invoice) {
-      const filtered = invoiceOptions.filter((invoice) =>
-        invoice.toLowerCase().includes(formData.nomor_invoice.toLowerCase())
+      const lowerQuery = formData.nomor_invoice.toLowerCase();
+      const filtered = invoiceOptions.filter(
+        (option) =>
+          option.invoice.toLowerCase().includes(lowerQuery) ||
+          option.name.toLowerCase().includes(lowerQuery)
       );
       setFilteredInvoices(filtered);
     } else {
@@ -2073,9 +2080,15 @@ const TravelFormApp = () => {
           mode: "cors",
         });
         const data: TransaksiData[] = await res.json();
-        const invoices = data.map((item) => item.nomor_invoice).filter(Boolean);
-        setInvoiceOptions(invoices);
-        setTransaksiData(data); // ← BARU: Simpan seluruh data Transaksi
+        // Ubah: Map ke objek { invoice, name }, filter jika invoice ada
+        const options = data
+          .map((item) => ({
+            invoice: item.nomor_invoice,
+            name: item.nama || "Nama Tidak Tersedia", // Fallback jika nama kosong
+          }))
+          .filter((opt) => opt.invoice); // Filter hanya yang punya invoice
+        setInvoiceOptions(options);
+        setTransaksiData(data); // Tetap simpan data full untuk autofill
       } catch (err) {
         console.error("Gagal memuat daftar invoice:", err);
       }
@@ -2386,19 +2399,19 @@ const TravelFormApp = () => {
                 />
                 {showInvoiceDropdown && filteredInvoices.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredInvoices.map((invoice) => (
+                    {filteredInvoices.map((option) => (
                       <div
-                        key={invoice}
+                        key={option.invoice} // Key berdasarkan invoice unik
                         onClick={() => {
                           setFormData((prev) => ({
                             ...prev,
-                            nomor_invoice: invoice,
+                            nomor_invoice: option.invoice, // Set hanya invoice ke formData
                           }));
                           setShowInvoiceDropdown(false);
                         }}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
                       >
-                        {invoice}
+                        {option.invoice} - {option.name}
                       </div>
                     ))}
                   </div>
@@ -2726,19 +2739,25 @@ const CustomerDataPage = () => {
   >(null);
   const [isEditFormOpened, setIsEditFormOpened] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [invoiceOptions, setInvoiceOptions] = useState<string[]>([]);
+  const [invoiceOptions, setInvoiceOptions] = useState<
+    { invoice: string; name: string }[]
+  >([]);
   const [transaksiData, setTransaksiData] = useState<TransaksiData[]>([]);
   const [showEditInvoiceDropdown, setShowEditInvoiceDropdown] = useState(false);
-  const [filteredEditInvoices, setFilteredEditInvoices] = useState<string[]>(
-    []
-  );
+  const [filteredEditInvoices, setFilteredEditInvoices] = useState<
+    { invoice: string; name: string }[]
+  >([]);
   const editInvoiceInputRef = useRef<HTMLInputElement>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   useEffect(() => {
     if (editData?.nomor_invoice) {
-      const filtered = invoiceOptions.filter((invoice) =>
-        invoice.toLowerCase().includes(editData.nomor_invoice.toLowerCase())
+      const lowerQuery = editData.nomor_invoice.toLowerCase();
+      const filtered = invoiceOptions.filter(
+        (option) =>
+          option.invoice.toLowerCase().includes(lowerQuery) || // ← DIEDIT: Filter berdasarkan invoice
+          option.name.toLowerCase().includes(lowerQuery) // ← DITAMBAHKAN: Filter juga berdasarkan name
       );
       setFilteredEditInvoices(filtered);
     } else {
@@ -2797,9 +2816,15 @@ const CustomerDataPage = () => {
         mode: "cors",
       });
       const data: TransaksiData[] = await res.json();
-      const invoices = data.map((item) => item.nomor_invoice).filter(Boolean);
-      setInvoiceOptions(invoices);
-      setTransaksiData(data); // Simpan seluruh data Transaksi
+      // Ubah mapping: bukan hanya invoice, tapi object {invoice, name}
+      const options = data
+        .map((item) => ({
+          invoice: item.nomor_invoice,
+          name: item.nama || "Nama Tidak Tersedia", // ← DITAMBAHKAN: Ambil nama, fallback jika kosong
+        }))
+        .filter((opt) => opt.invoice); // Filter hanya yang punya invoice
+      setInvoiceOptions(options); // ← DIEDIT: Set options sebagai array objects
+      setTransaksiData(data); // Tetap simpan data full
     } catch (err) {
       console.error("Gagal memuat daftar invoice:", err);
     }
@@ -3311,6 +3336,10 @@ const CustomerDataPage = () => {
     }
   };
 
+  const handleRowClick = (id: string) => {
+    setSelectedRowId((prev) => (prev === id ? null : id));
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       {isLoading && (
@@ -3422,20 +3451,27 @@ const CustomerDataPage = () => {
                 />
                 {showEditInvoiceDropdown && filteredEditInvoices.length > 0 && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                    {filteredEditInvoices.map((invoice) => (
-                      <div
-                        key={invoice}
-                        onClick={() => {
-                          setEditData((prev) =>
-                            prev ? { ...prev, nomor_invoice: invoice } : null
-                          );
-                          setShowEditInvoiceDropdown(false);
-                        }}
-                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
-                      >
-                        {invoice}
-                      </div>
-                    ))}
+                    {filteredEditInvoices.map(
+                      (
+                        option // ← DIEDIT: option sekarang object
+                      ) => (
+                        <div
+                          key={option.invoice} // ← DIEDIT: Key berdasarkan invoice unik
+                          onClick={() => {
+                            setEditData(
+                              (prev) =>
+                                prev
+                                  ? { ...prev, nomor_invoice: option.invoice }
+                                  : null // ← DIEDIT: Set hanya invoice ke formData
+                            );
+                            setShowEditInvoiceDropdown(false);
+                          }}
+                          className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                        >
+                          {option.invoice} - {option.name}
+                        </div>
+                      )
+                    )}
                   </div>
                 )}
               </div>
@@ -3830,7 +3866,12 @@ const CustomerDataPage = () => {
                     return (
                       <tr
                         key={item.id}
-                        className={isLunas ? "bg-green-100" : ""}
+                        className={`${isLunas ? "bg-green-100" : ""} ${
+                          selectedRowId === item.id
+                            ? "bg-blue-100 shadow-md cursor-pointer"
+                            : ""
+                        }`} // ← DIEDIT: Tambah class conditional untuk highlight dan shadow
+                        onClick={() => handleRowClick(item.id)}
                       >
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           <input
