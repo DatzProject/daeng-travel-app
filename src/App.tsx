@@ -48,6 +48,9 @@ type TransaksiData = {
   dp2: string;
   bukti_dp2?: string;
   tanggal_dp2: string;
+  pelunasan: string;
+  bukti_pelunasan?: string;
+  tanggal_pelunasan: string;
   bagasi: string;
   jumlah_peserta: string;
   diskon: string;
@@ -64,7 +67,7 @@ interface TravelData extends FormData {
 }
 
 const ENDPOINT =
-  "https://script.google.com/macros/s/AKfycbyg6rGgI2t1AaLax5t-16oIyu1yQYyJ8jO9RDV64c51ywtYXMbiCeNrvhfmvgsT30cwwg/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
+  "https://script.google.com/macros/s/AKfycbxCqLV8iq3KoH9jzK1OYUO_NryzzN20-MHLHySfqnLfaUQQJC135DtVC0hoBnMfziQtlQ/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
 
 const TransaksiPage = () => {
   const [formData, setFormData] = useState<Omit<TransaksiData, "id">>({
@@ -81,6 +84,9 @@ const TransaksiPage = () => {
     dp2: "",
     bukti_dp2: "",
     tanggal_dp2: "",
+    pelunasan: "",
+    bukti_pelunasan: "",
+    tanggal_pelunasan: "",
     bagasi: "",
     jumlah_peserta: "1",
     diskon: "0",
@@ -101,6 +107,12 @@ const TransaksiPage = () => {
   const [isEditFormOpened, setIsEditFormOpened] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [totalOmzet, setTotalOmzet] = useState(0);
+  const [buktiPelunasanBase64, setBuktiPelunasanBase64] = useState<
+    string | null
+  >(null);
+  const [editBuktiPelunasan, setEditBuktiPelunasan] = useState<string | null>(
+    null
+  );
 
   const parseDate = (dateString: string): Date | null => {
     if (!dateString) return null;
@@ -213,12 +225,12 @@ const TransaksiPage = () => {
         "harga_paket",
         "dp1",
         "dp2",
+        "pelunasan", // ← TAMBAH
         "bagasi",
         "diskon",
         "jumlah_peserta",
       ].includes(name)
     ) {
-      // <-- Removed "durasi_tour"
       const rawValue = value.replace(/\./g, "").replace(/\D/g, "");
       setFormData((prev) => ({ ...prev, [name]: rawValue }));
     } else {
@@ -228,13 +240,14 @@ const TransaksiPage = () => {
 
   const handleFileChange = (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "dp1" | "dp2"
+    type: "dp1" | "dp2" | "pelunasan"
   ) => {
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
       reader.onload = () => {
         if (type === "dp1") setBuktiDp1Base64(reader.result as string);
-        else setBuktiDp2Base64(reader.result as string);
+        else if (type === "dp2") setBuktiDp2Base64(reader.result as string);
+        else setBuktiPelunasanBase64(reader.result as string);
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -242,13 +255,14 @@ const TransaksiPage = () => {
 
   const handleEditFileChange = (
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "dp1" | "dp2"
+    type: "dp1" | "dp2" | "pelunasan"
   ) => {
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
       reader.onload = () => {
         if (type === "dp1") setEditBuktiDp1(reader.result as string);
-        else setEditBuktiDp2(reader.result as string);
+        else if (type === "dp2") setEditBuktiDp2(reader.result as string);
+        else setEditBuktiPelunasan(reader.result as string); // ← TAMBAH
       };
       reader.readAsDataURL(e.target.files[0]);
     }
@@ -263,7 +277,8 @@ const TransaksiPage = () => {
     const total = (harga + bagasi) * pax - diskon;
     const dp1 = Number(formData.dp1) || 0;
     const dp2 = Number(formData.dp2) || 0;
-    const sisa = total - dp1 - dp2;
+    const pelunasan = Number(formData.pelunasan) || 0;
+    const sisa = total - dp1 - dp2 - pelunasan;
 
     setFormData((prev) => ({
       ...prev,
@@ -281,6 +296,7 @@ const TransaksiPage = () => {
     formData.diskon,
     formData.dp1,
     formData.dp2,
+    formData.pelunasan,
   ]);
 
   // Auto-generate invoice number ketika nama diisi
@@ -348,6 +364,9 @@ const TransaksiPage = () => {
         ...formData,
         bukti_dp1: buktiDp1Base64 ? buktiDp1Base64.split(",")[1] : null,
         bukti_dp2: buktiDp2Base64 ? buktiDp2Base64.split(",")[1] : null,
+        bukti_pelunasan: buktiPelunasanBase64
+          ? buktiPelunasanBase64.split(",")[1]
+          : null,
         sheet: "Transaksi",
       };
 
@@ -376,6 +395,9 @@ const TransaksiPage = () => {
         dp2: "",
         bukti_dp2: "",
         tanggal_dp2: "",
+        pelunasan: "",
+        bukti_pelunasan: "",
+        tanggal_pelunasan: "",
         bagasi: "",
         jumlah_peserta: "1",
         diskon: "0",
@@ -385,6 +407,7 @@ const TransaksiPage = () => {
       });
       setBuktiDp1Base64(null);
       setBuktiDp2Base64(null);
+      setBuktiPelunasanBase64(null);
       setMessage("Transaksi berhasil disimpan!");
       setTimeout(() => setMessage(""), 3000);
     } catch (err: any) {
@@ -422,11 +445,13 @@ const TransaksiPage = () => {
       ...item,
       tanggal_dp1: dateToComparable(item.tanggal_dp1),
       tanggal_dp2: dateToComparable(item.tanggal_dp2),
+      tanggal_pelunasan: dateToComparable(item.tanggal_pelunasan),
       tanggal_keberangkatan: dateToComparable(item.tanggal_keberangkatan),
       tanggal_daftar: dateToComparable(item.tanggal_daftar),
     });
     setEditBuktiDp1(null);
     setEditBuktiDp2(null);
+    setEditBuktiPelunasan(null);
     setIsEditFormOpened(true);
   };
 
@@ -440,7 +465,8 @@ const TransaksiPage = () => {
     const total = (harga + bagasi) * pax - diskon;
     const dp1 = Number(editData.dp1) || 0;
     const dp2 = Number(editData.dp2) || 0;
-    const sisa = total - dp1 - dp2;
+    const pelunasan = Number(editData.pelunasan) || 0;
+    const sisa = total - dp1 - dp2 - pelunasan;
 
     setEditData((prev) => ({
       ...prev!,
@@ -458,6 +484,7 @@ const TransaksiPage = () => {
     editData?.diskon,
     editData?.dp1,
     editData?.dp2,
+    editData?.pelunasan,
   ]);
 
   const handleEditInputChange = (
@@ -470,6 +497,7 @@ const TransaksiPage = () => {
           "harga_paket",
           "dp1",
           "dp2",
+          "pelunasan",
           "bagasi",
           "diskon",
           "jumlah_peserta",
@@ -494,6 +522,9 @@ const TransaksiPage = () => {
         old_nomor_passport: editData.nomor_invoice,
         bukti_dp1: editBuktiDp1 ? editBuktiDp1.split(",")[1] : null,
         bukti_dp2: editBuktiDp2 ? editBuktiDp2.split(",")[1] : null,
+        bukti_pelunasan: editBuktiPelunasan
+          ? editBuktiPelunasan.split(",")[1]
+          : null,
         sheet: "Transaksi",
       };
 
@@ -1148,6 +1179,54 @@ const TransaksiPage = () => {
               </div>
             </div>
 
+            {/* Pelunasan Section */}
+            <div className="border-t pt-4">
+              <h3 className="text-md font-medium text-gray-800 mb-3">
+                Pelunasan
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Calendar size={16} className="mr-1" />
+                    Tanggal Pelunasan
+                  </label>
+                  <input
+                    type="date"
+                    name="tanggal_pelunasan"
+                    value={formData.tanggal_pelunasan}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <DollarSign size={16} className="mr-1" />
+                    Jumlah Pelunasan
+                  </label>
+                  <input
+                    type="text"
+                    name="pelunasan"
+                    value={formatInputNumber(formData.pelunasan)}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Contoh: 2000000"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                  <Image size={16} className="mr-1" />
+                  Bukti Transfer Pelunasan
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleFileChange(e, "pelunasan")}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
             {/* Sisa Pembayaran (calculated, read-only) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -1513,6 +1592,72 @@ const TransaksiPage = () => {
                 </div>
               </div>
 
+              {/* Pelunasan Section */}
+              <div className="border-t pt-4">
+                <h3 className="text-md font-medium text-gray-800 mb-3">
+                  Pelunasan
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <Calendar size={16} className="mr-1" />
+                      Tanggal Pelunasan
+                    </label>
+                    <input
+                      type="date"
+                      name="tanggal_pelunasan"
+                      value={editData.tanggal_pelunasan}
+                      onChange={(e) =>
+                        setEditData({
+                          ...editData,
+                          tanggal_pelunasan: e.target.value,
+                        })
+                      }
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <DollarSign size={16} className="mr-1" />
+                      Jumlah Pelunasan
+                    </label>
+                    <input
+                      type="text"
+                      name="pelunasan"
+                      value={formatInputNumber(editData.pelunasan)}
+                      onChange={handleEditInputChange}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Contoh: 2000000"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <Image size={16} className="mr-1" />
+                    Bukti Transfer Pelunasan Baru (Opsional)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleEditFileChange(e, "pelunasan")}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  {editData.bukti_pelunasan && (
+                    <p className="text-sm text-gray-500 mt-2">
+                      Bukti saat ini:{" "}
+                      <a
+                        href={editData.bukti_pelunasan}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Lihat Bukti Pelunasan
+                      </a>
+                    </p>
+                  )}
+                </div>
+              </div>
+
               {/* Sisa Pembayaran (calculated, read-only) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -1623,6 +1768,15 @@ const TransaksiPage = () => {
                       Tgl DP2
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Pelunasan
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Bukti Pelunasan
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Tgl Pelunasan
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Bagasi
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -1702,6 +1856,26 @@ const TransaksiPage = () => {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {formatDate(item.tanggal_dp2)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatCurrency(item.pelunasan)}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {item.bukti_pelunasan ? (
+                          <a
+                            href={item.bukti_pelunasan}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            Lihat
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        {formatDate(item.tanggal_pelunasan)}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {item.bagasi ? formatCurrency(item.bagasi) : "-"}
