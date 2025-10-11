@@ -423,6 +423,7 @@ const TransaksiPage = () => {
       tanggal_dp1: dateToComparable(item.tanggal_dp1),
       tanggal_dp2: dateToComparable(item.tanggal_dp2),
       tanggal_keberangkatan: dateToComparable(item.tanggal_keberangkatan),
+      tanggal_daftar: dateToComparable(item.tanggal_daftar),
     });
     setEditBuktiDp1(null);
     setEditBuktiDp2(null);
