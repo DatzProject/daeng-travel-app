@@ -70,6 +70,7 @@ const ENDPOINT =
   "https://script.google.com/macros/s/AKfycbxCqLV8iq3KoH9jzK1OYUO_NryzzN20-MHLHySfqnLfaUQQJC135DtVC0hoBnMfziQtlQ/exec"; // Ganti dengan URL Web App dari Google Apps Script Anda
 
 const TransaksiPage = () => {
+  const HARGA_BAGASI_PER_KG = 27500;
   const [formData, setFormData] = useState<Omit<TransaksiData, "id">>({
     nomor_invoice: "",
     nama: "",
@@ -270,11 +271,14 @@ const TransaksiPage = () => {
 
   const calculatePayments = () => {
     const harga = Number(formData.harga_paket) || 0;
-    const bagasi = Number(formData.bagasi) || 0;
+    const kgBagasi = Number(formData.bagasi) || 0;
     const pax = Number(formData.jumlah_peserta) || 1;
     const diskon = Number(formData.diskon) || 0;
 
-    const total = (harga + bagasi) * pax - diskon;
+    // Hitung total bagasi: Kg × harga per Kg (bukan × pax)
+    const totalBagasi = kgBagasi * HARGA_BAGASI_PER_KG;
+
+    const total = harga * pax + totalBagasi - diskon;
     const dp1 = Number(formData.dp1) || 0;
     const dp2 = Number(formData.dp2) || 0;
     const pelunasan = Number(formData.pelunasan) || 0;
@@ -458,11 +462,12 @@ const TransaksiPage = () => {
   const calculateEditPayments = () => {
     if (!editData) return;
     const harga = Number(editData.harga_paket) || 0;
-    const bagasi = Number(editData.bagasi) || 0;
+    const kgBagasi = Number(editData.bagasi) || 0;
     const pax = Number(editData.jumlah_peserta) || 1;
     const diskon = Number(editData.diskon) || 0;
 
-    const total = (harga + bagasi) * pax - diskon;
+    const totalBagasi = kgBagasi * HARGA_BAGASI_PER_KG;
+    const total = harga * pax + totalBagasi - diskon;
     const dp1 = Number(editData.dp1) || 0;
     const dp2 = Number(editData.dp2) || 0;
     const pelunasan = Number(editData.pelunasan) || 0;
@@ -646,18 +651,19 @@ const TransaksiPage = () => {
   };
 
   const handleDownloadInvoice = (item: TransaksiData) => {
-    // Data dari transaksi yang dipilih
+    const HARGA_BAGASI_PER_KG = 27500; // ← TAMBAH INI di dalam fungsi juga
+
     const pax = Number(item.jumlah_peserta) || 1;
     const hargaPaket = Number(item.harga_paket) || 0;
-    const bagasi = Number(item.bagasi) || 0;
+    const kgBagasi = Number(item.bagasi) || 0; // ← bagasi adalah Kg
     const diskon = Number(item.diskon) || 0;
 
     const totalAmount = hargaPaket * pax;
-    const totalBagasi = bagasi * pax;
+    const totalBagasi = kgBagasi * HARGA_BAGASI_PER_KG; // ← UBAH INI
     const grandTotal = totalAmount + totalBagasi - diskon;
 
     const pricePerPax = hargaPaket.toString();
-    const bagasiPerPax = bagasi > 0 ? bagasi.toString() : "0";
+    const hargaBagasiPerKg = HARGA_BAGASI_PER_KG.toString(); // ← UBAH INI
 
     const program =
       item.paket_tour +
@@ -675,14 +681,12 @@ const TransaksiPage = () => {
 
     const doc = new jsPDF();
 
-    // Logo (pastikan file ada di public folder)
     try {
       doc.addImage("/logo_daeng_travel.png", "PNG", 10, 17, 40, 16);
     } catch (e) {
       console.log("Logo tidak ditemukan");
     }
 
-    // Header Perusahaan
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
     doc.text("CV. DAENG WISATA INDONESIA TOUR & TRAVEL", 105, 20, {
@@ -697,12 +701,10 @@ const TransaksiPage = () => {
       align: "center",
     });
 
-    // Garis pemisah
     doc.setDrawColor(0, 0, 0);
     doc.setLineWidth(0.5);
     doc.line(10, 40, 200, 40);
 
-    // Booking Konfirmasi
     doc.setFontSize(10);
     doc.text("Booking Konfirmasi:", 15, 60);
     doc.text(`Tanggal : ${tanggal}`, 15, 70);
@@ -734,9 +736,9 @@ const TransaksiPage = () => {
       invoiceBody.push([
         "2",
         "Biaya Bagasi",
-        formatNumber(bagasiPerPax),
+        formatNumber(hargaBagasiPerKg), // ← harga per Kg
         "-",
-        String(pax),
+        String(kgBagasi) + " Kg", // ← UBAH INI: tampilkan Kg, bukan pax
         formatNumber(totalBagasi.toString()),
       ]);
     }
@@ -1042,7 +1044,7 @@ const TransaksiPage = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                 <Package size={16} className="mr-1" />
-                Harga Bagasi (Opsional)
+                Jumlah Bagasi (Kg) - Rp 27.500/Kg
               </label>
               <input
                 type="text"
@@ -1050,8 +1052,16 @@ const TransaksiPage = () => {
                 value={formatInputNumber(formData.bagasi)}
                 onChange={handleInputChange}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Contoh: 300000"
+                placeholder="Contoh: 20"
               />
+              {formData.bagasi && (
+                <p className="text-sm text-gray-600 mt-1">
+                  Total:{" "}
+                  {formatCurrency(
+                    String(Number(formData.bagasi) * HARGA_BAGASI_PER_KG)
+                  )}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -1419,7 +1429,7 @@ const TransaksiPage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                   <Package size={16} className="mr-1" />
-                  Harga Bagasi (Opsional)
+                  Jumlah Bagasi (Kg) - Rp 27.500/Kg
                 </label>
                 <input
                   type="text"
@@ -1427,8 +1437,16 @@ const TransaksiPage = () => {
                   value={formatInputNumber(editData.bagasi)}
                   onChange={handleEditInputChange}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Contoh: 300000"
+                  placeholder="Contoh: 20"
                 />
+                {editData.bagasi && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Total:{" "}
+                    {formatCurrency(
+                      String(Number(editData.bagasi) * HARGA_BAGASI_PER_KG)
+                    )}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
@@ -1777,7 +1795,7 @@ const TransaksiPage = () => {
                       Tgl Pelunasan
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                      Bagasi
+                      Bagasi (Kg)
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Jml Peserta
@@ -1878,7 +1896,7 @@ const TransaksiPage = () => {
                         {formatDate(item.tanggal_pelunasan)}
                       </td>
                       <td className="px-4 py-3 text-sm">
-                        {item.bagasi ? formatCurrency(item.bagasi) : "-"}
+                        {item.bagasi ? `${formatNumber(item.bagasi)} Kg` : "-"}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {item.jumlah_peserta}
