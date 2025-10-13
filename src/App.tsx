@@ -99,6 +99,7 @@ const TransaksiPage = () => {
   const [buktiDp1Base64, setBuktiDp1Base64] = useState<string | null>(null);
   const [buktiDp2Base64, setBuktiDp2Base64] = useState<string | null>(null);
   const [dataList, setDataList] = useState<TransaksiData[]>([]);
+  const [customerData, setCustomerData] = useState<TravelData[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [editData, setEditData] = useState<TransaksiData | null>(null);
@@ -269,6 +270,18 @@ const TransaksiPage = () => {
     }
   };
 
+  const fetchCustomerData = async () => {
+    try {
+      const res = await fetch(`${ENDPOINT}?action=read&sheet=FormCostumer`, {
+        mode: "cors",
+      });
+      const data = await res.json();
+      setCustomerData(data);
+    } catch (err) {
+      console.error("Gagal memuat data customer:", err);
+    }
+  };
+
   const calculatePayments = () => {
     const harga = Number(formData.harga_paket) || 0;
     const kgBagasi = Number(formData.bagasi) || 0;
@@ -353,6 +366,7 @@ const TransaksiPage = () => {
 
   useEffect(() => {
     fetchData();
+    fetchCustomerData();
   }, []);
 
   const handleSubmit = async () => {
@@ -826,6 +840,20 @@ const TransaksiPage = () => {
     doc.text("Daeng Travel", 150, yPos + 50);
 
     doc.save(`invoice_${item.nomor_invoice}.pdf`);
+  };
+
+  // Fungsi untuk menghitung jumlah peserta yang sudah terinput di customer
+  const getRegisteredCount = (invoiceNumber: string): number => {
+    return customerData.filter(
+      (customer) => customer.nomor_invoice === invoiceNumber
+    ).length;
+  };
+
+  // Fungsi untuk menghitung sisa peserta
+  const getRemainingParticipants = (item: TransaksiData): number => {
+    const totalPeserta = Number(item.jumlah_peserta) || 0;
+    const registered = getRegisteredCount(item.nomor_invoice);
+    return totalPeserta - registered;
   };
 
   return (
@@ -1813,6 +1841,9 @@ const TransaksiPage = () => {
                       Status
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Sisa Peserta
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Aksi
                     </th>
                   </tr>
@@ -1919,6 +1950,18 @@ const TransaksiPage = () => {
                           }
                         >
                           {item.status_pembayaran}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <span
+                          className={
+                            getRemainingParticipants(item) === 0
+                              ? "text-green-600 font-bold"
+                              : "text-orange-600 font-semibold"
+                          }
+                        >
+                          {getRemainingParticipants(item)} /{" "}
+                          {item.jumlah_peserta}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm">
@@ -2749,7 +2792,6 @@ const CustomerDataPage = () => {
   const [startDaftar, setStartDaftar] = useState("");
   const [endDaftar, setEndDaftar] = useState("");
   const [startKeberangkatan, setStartKeberangkatan] = useState("");
-  const [endKeberangkatan, setEndKeberangkatan] = useState("");
   const [selectedPaket, setSelectedPaket] = useState("");
   const [editData, setEditData] = useState<TravelData | null>(null);
   const [newFotoPassportBase64, setNewFotoPassportBase64] = useState<
@@ -2767,7 +2809,85 @@ const CustomerDataPage = () => {
   >([]);
   const editInvoiceInputRef = useRef<HTMLInputElement>(null);
   const editFormRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+
+  // Fungsi untuk mendapatkan tanggal keberangkatan terdekat
+  const getNextDepartureDate = (): string | null => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time untuk perbandingan tanggal saja
+
+    const futureDates = dataList
+      .map((item) => {
+        const date = parseDate(item.tanggal_keberangkatan);
+        return date;
+      })
+      .filter((date): date is Date => date !== null && date >= today)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (futureDates.length === 0) return null;
+
+    const nextDate = futureDates[0];
+    return nextDate.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  // Fungsi untuk mendapatkan jumlah peserta pada tanggal keberangkatan terdekat
+  const getNextDepartureParticipants = (): number => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const futureDates = dataList
+      .map((item) => {
+        const date = parseDate(item.tanggal_keberangkatan);
+        return { date, item };
+      })
+      .filter(
+        (entry): entry is { date: Date; item: TravelData } =>
+          entry.date !== null && entry.date >= today
+      )
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (futureDates.length === 0) return 0;
+
+    const nextDate = futureDates[0].date;
+    const nextDateString = nextDate.toISOString().split("T")[0]; // Format YYYY-MM-DD
+
+    // Hitung jumlah peserta dengan tanggal keberangkatan yang sama
+    const participantCount = dataList.filter((item) => {
+      const itemDate = parseDate(item.tanggal_keberangkatan);
+      if (!itemDate) return false;
+      const itemDateString = itemDate.toISOString().split("T")[0];
+      return itemDateString === nextDateString;
+    }).length;
+
+    return participantCount;
+  };
+
+  // Fungsi untuk mendapatkan nama paket tour pada tanggal keberangkatan terdekat
+  const getNextDepartureTourPackage = (): string => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const futureDates = dataList
+      .map((item) => {
+        const date = parseDate(item.tanggal_keberangkatan);
+        return { date, item };
+      })
+      .filter(
+        (entry): entry is { date: Date; item: TravelData } =>
+          entry.date !== null && entry.date >= today
+      )
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (futureDates.length === 0) return "";
+
+    return futureDates[0].item.paket_tour || "";
+  };
 
   useEffect(() => {
     if (editData?.nomor_invoice) {
@@ -2912,8 +3032,7 @@ const CustomerDataPage = () => {
       (!startDaftar || itemTanggalDaftar >= startDaftar) &&
       (!endDaftar || itemTanggalDaftar <= endDaftar);
     const keberangkatanMatch =
-      (!startKeberangkatan || itemTanggalKeberangkatan >= startKeberangkatan) &&
-      (!endKeberangkatan || itemTanggalKeberangkatan <= endKeberangkatan);
+      !startKeberangkatan || itemTanggalKeberangkatan === startKeberangkatan;
     const paketMatch = !selectedPaket || item.paket_tour === selectedPaket;
     return nameMatch && daftarMatch && keberangkatanMatch && paketMatch;
   });
@@ -2923,7 +3042,7 @@ const CustomerDataPage = () => {
     setStartDaftar("");
     setEndDaftar("");
     setStartKeberangkatan("");
-    setEndKeberangkatan("");
+
     setSelectedPaket("");
   };
 
@@ -3431,6 +3550,121 @@ const CustomerDataPage = () => {
           </div>
         )}
 
+        {/* Info Tanggal Keberangkatan Terdekat */}
+        {getNextDepartureDate() && (
+          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg p-4 mb-6 text-white">
+            <div className="flex flex-col space-y-4">
+              {/* Header */}
+              <div className="flex items-center">
+                <div className="bg-white bg-opacity-20 rounded-lg p-2 mr-3">
+                  <Calendar size={24} />
+                </div>
+                <h3 className="text-base font-semibold">
+                  Keberangkatan Selanjutnya
+                </h3>
+              </div>
+
+              {/* Tanggal Keberangkatan */}
+              <div className="bg-white bg-opacity-10 rounded-lg p-3">
+                <p className="text-xs opacity-75 mb-1">Tanggal</p>
+                <p className="text-lg font-bold leading-tight">
+                  {getNextDepartureDate()}
+                </p>
+              </div>
+
+              {/* Info Grid - Paket & Peserta */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Paket Tour */}
+                {getNextDepartureTourPackage() && (
+                  <div className="bg-white bg-opacity-10 rounded-lg p-3">
+                    <div className="flex items-center mb-1">
+                      <Package size={14} className="mr-1 opacity-75" />
+                      <p className="text-xs opacity-75">Paket Tour</p>
+                    </div>
+                    <p className="text-sm font-semibold leading-tight">
+                      {getNextDepartureTourPackage()}
+                    </p>
+                  </div>
+                )}
+
+                {/* Jumlah Peserta */}
+                <div className="bg-white bg-opacity-10 rounded-lg p-3">
+                  <div className="flex items-center mb-1">
+                    <User size={14} className="mr-1 opacity-75" />
+                    <p className="text-xs opacity-75">Peserta</p>
+                  </div>
+                  <div className="flex items-baseline">
+                    <p className="text-3xl font-bold mr-1">
+                      {getNextDepartureParticipants()}
+                    </p>
+                    <p className="text-xs opacity-75">Orang</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ← BAGIAN BARU: Tombol Filter */}
+              <button
+                onClick={() => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+
+                  const futureDates = dataList
+                    .map((item) => {
+                      const date = parseDate(item.tanggal_keberangkatan);
+                      return date;
+                    })
+                    .filter(
+                      (date): date is Date => date !== null && date >= today
+                    )
+                    .sort((a, b) => a.getTime() - b.getTime());
+
+                  if (futureDates.length > 0) {
+                    const nextDate = futureDates[0];
+                    const year = nextDate.getFullYear();
+                    const month = (nextDate.getMonth() + 1)
+                      .toString()
+                      .padStart(2, "0");
+                    const day = nextDate.getDate().toString().padStart(2, "0");
+                    const isoDate = `${year}-${month}-${day}`;
+                    setStartKeberangkatan(isoDate);
+                    setTimeout(() => {
+                      if (tableRef.current) {
+                        tableRef.current.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }
+                    }, 100);
+                  }
+                }}
+                className="w-full bg-white bg-opacity-20 hover:bg-opacity-30 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2"
+              >
+                <Calendar size={16} />
+                <span>Tampilkan Data Keberangkatan Ini</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Jika tidak ada tanggal keberangkatan */}
+        {!getNextDepartureDate() && (
+          <div className="bg-gray-100 border border-gray-300 rounded-xl p-4 mb-6">
+            <div className="flex flex-col items-center text-center space-y-3">
+              <div className="bg-gray-200 rounded-lg p-3">
+                <Calendar className="text-gray-400" size={32} />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-700 mb-1">
+                  Keberangkatan Selanjutnya
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Tidak ada jadwal keberangkatan mendatang
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {editData && (
           <div
             ref={editFormRef}
@@ -3735,7 +3969,7 @@ const CustomerDataPage = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanggal Keberangkatan Dari
+                Tanggal Keberangkatan
               </label>
               <input
                 type="date"
@@ -3744,17 +3978,7 @@ const CustomerDataPage = () => {
                 className="w-full p-3 border border-gray-300 rounded-lg"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tanggal Keberangkatan Sampai
-              </label>
-              <input
-                type="date"
-                value={endKeberangkatan}
-                onChange={(e) => setEndKeberangkatan(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg"
-              />
-            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Paket Tour
@@ -3798,7 +4022,7 @@ const CustomerDataPage = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-6">
+        <div ref={tableRef} className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">
             Data Customer ({filteredData.length})
           </h2>
