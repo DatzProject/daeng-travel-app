@@ -992,9 +992,7 @@ const TransaksiPage = () => {
                 <option value="Malaysia - Singapore">
                   Malaysia - Singapore
                 </option>
-                <option value="Bangkok - Pattaya">
-                  Bangkok - Pattaya
-                </option>
+                <option value="Bangkok - Pattaya">Bangkok - Pattaya</option>
               </select>
             </div>
             {/* Durasi Tour */}
@@ -1372,9 +1370,8 @@ const TransaksiPage = () => {
                   </option>
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
-                  <option value="Bangkok - Pattaya">
-                    Bangkok - Pattaya
                   </option>
+                  <option value="Bangkok - Pattaya">Bangkok - Pattaya</option>
                 </select>
               </div>
               {/* Durasi Tour */}
@@ -2583,9 +2580,7 @@ const TravelFormApp = () => {
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
                   </option>
-                  <option value="Bangkok - Pattaya">
-                    Bangkok - Pattaya
-                  </option>
+                  <option value="Bangkok - Pattaya">Bangkok - Pattaya</option>
                 </select>
               </div>
               <div>
@@ -3833,9 +3828,7 @@ const CustomerDataPage = () => {
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
                   </option>
-                  <option value="Bangkok - Pattaya">
-                    Bangkok - Pattaya
-                  </option>
+                  <option value="Bangkok - Pattaya">Bangkok - Pattaya</option>
                 </select>
               </div>
               <div>
@@ -4006,9 +3999,7 @@ const CustomerDataPage = () => {
                 <option value="Malaysia - Singapore">
                   Malaysia - Singapore
                 </option>
-                <option value="Bangkok - Pattaya">
-                    Bangkok - Pattaya
-                  </option>
+                <option value="Bangkok - Pattaya">Bangkok - Pattaya</option>
               </select>
             </div>
           </div>
