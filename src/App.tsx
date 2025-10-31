@@ -1372,6 +1372,8 @@ const TransaksiPage = () => {
                   </option>
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
+                  <option value="Bangkok - Pattaya">
+                    Bangkok - Pattaya
                   </option>
                 </select>
               </div>
@@ -2580,6 +2582,9 @@ const TravelFormApp = () => {
                   </option>
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
+                  </option>
+                  <option value="Bangkok - Pattaya">
+                    Bangkok - Pattaya
                   </option>
                 </select>
               </div>
@@ -3828,6 +3833,9 @@ const CustomerDataPage = () => {
                   <option value="Malaysia - Singapore">
                     Malaysia - Singapore
                   </option>
+                  <option value="Bangkok - Pattaya">
+                    Bangkok - Pattaya
+                  </option>
                 </select>
               </div>
               <div>
@@ -3998,6 +4006,9 @@ const CustomerDataPage = () => {
                 <option value="Malaysia - Singapore">
                   Malaysia - Singapore
                 </option>
+                <option value="Bangkok - Pattaya">
+                    Bangkok - Pattaya
+                  </option>
               </select>
             </div>
           </div>
