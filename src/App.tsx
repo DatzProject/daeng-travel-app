@@ -992,6 +992,9 @@ const TransaksiPage = () => {
                 <option value="Malaysia - Singapore">
                   Malaysia - Singapore
                 </option>
+                <option value="Bangkok - Pattaya">
+                  Bangkok - Pattaya
+                </option>
               </select>
             </div>
             {/* Durasi Tour */}
